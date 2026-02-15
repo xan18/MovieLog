@@ -5,6 +5,7 @@ import { useAppSettings } from './hooks/useAppSettings.js';
 import { useCatalog } from './hooks/useCatalog.js';
 import { useLibrary } from './hooks/useLibrary.js';
 import { tmdbUrl } from './services/tmdb.js';
+import { isSupabaseConfigured, supabase } from './services/supabase.js';
 import { getMovieStatuses, getTvStatuses, getStatusBadgeConfig, getTvShowStatusMap, getCrewRoleMap } from './utils/statusConfig.js';
 import { isReleasedItem } from './utils/releaseUtils.js';
 import { sanitizeLibraryData } from './utils/librarySanitizer.js';
@@ -15,6 +16,7 @@ import CatalogView from './components/views/CatalogView.jsx';
 import LibraryView from './components/views/LibraryView.jsx';
 import StatsView from './components/views/StatsView.jsx';
 import SettingsView from './components/views/SettingsView.jsx';
+import AuthView from './components/views/AuthView.jsx';
 import DetailsModal from './components/modals/DetailsModal.jsx';
 import QuickActionsMenu from './components/modals/QuickActionsMenu.jsx';
 import PersonModal from './components/modals/PersonModal.jsx';
@@ -46,6 +48,14 @@ export default function App() {
     debounceMs: 500,
     normalize: sanitizeLibraryData,
   });
+  const [authReady, setAuthReady] = useState(!isSupabaseConfigured);
+  const [session, setSession] = useState(null);
+  const [authMode, setAuthMode] = useState('signin');
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [authNotice, setAuthNotice] = useState('');
+  const [cloudReady, setCloudReady] = useState(false);
+  const [cloudSyncError, setCloudSyncError] = useState('');
 
   // Navigation & UI state
   const [activeTab, setActiveTab] = useState(startTab);
@@ -75,6 +85,8 @@ export default function App() {
   selectedItemRef.current = selectedItem;
   const longPressTimer = useRef(null);
   const longPressActivated = useRef(false);
+  const skipNextCloudSyncRef = useRef(false);
+  const lastCloudSyncRef = useRef('');
 
   // Hooks
   const catalog = useCatalog({ lang, t, persistCatalogFilters });
@@ -84,6 +96,197 @@ export default function App() {
     setSeasonRating,
     removeFromLibrary, handleEpisodeClick, handleSeasonToggle,
   } = useLibrary({ library, setLibrary, setSelectedItem, selectedItemRef });
+
+  const currentUserId = session?.user?.id || null;
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+
+    let active = true;
+
+    const initSession = async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (!active) return;
+      if (error) setAuthError(error.message);
+      setSession(data?.session || null);
+      setAuthReady(true);
+    };
+
+    initSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      setSession(nextSession || null);
+      setAuthError('');
+      setAuthNotice('');
+      setCloudSyncError('');
+      setCloudReady(false);
+      if (!nextSession && event === 'SIGNED_OUT') {
+        setLibrary([]);
+        lastCloudSyncRef.current = '';
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, [setLibrary]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase || !currentUserId) return;
+
+    let cancelled = false;
+    setCloudReady(false);
+    setCloudSyncError('');
+
+    const loadCloudLibrary = async () => {
+      const { data, error } = await supabase
+        .from('library_items')
+        .select('payload')
+        .eq('user_id', currentUserId);
+
+      if (cancelled) return;
+      if (error) {
+        setCloudSyncError(error.message);
+        setCloudReady(true);
+        return;
+      }
+
+      const remoteLibrary = sanitizeLibraryData((data || []).map((row) => row.payload));
+      if (remoteLibrary.length > 0) {
+        skipNextCloudSyncRef.current = true;
+        setLibrary(remoteLibrary);
+        lastCloudSyncRef.current = JSON.stringify(remoteLibrary);
+      } else {
+        lastCloudSyncRef.current = '';
+      }
+
+      setCloudReady(true);
+    };
+
+    loadCloudLibrary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUserId, setLibrary]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase || !currentUserId || !cloudReady) return;
+    if (skipNextCloudSyncRef.current) {
+      skipNextCloudSyncRef.current = false;
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      const fingerprint = JSON.stringify(library);
+      if (fingerprint === lastCloudSyncRef.current) return;
+
+      try {
+        setCloudSyncError('');
+
+        if (library.length === 0) {
+          const { error } = await supabase
+            .from('library_items')
+            .delete()
+            .eq('user_id', currentUserId);
+
+          if (error) throw error;
+          lastCloudSyncRef.current = fingerprint;
+          return;
+        }
+
+        const rows = library.map((item) => ({
+          user_id: currentUserId,
+          media_type: item.mediaType,
+          tmdb_id: item.id,
+          payload: item,
+        }));
+
+        const { error: upsertError } = await supabase
+          .from('library_items')
+          .upsert(rows, { onConflict: 'user_id,media_type,tmdb_id' });
+
+        if (upsertError) throw upsertError;
+
+        const { data: existingRows, error: existingError } = await supabase
+          .from('library_items')
+          .select('media_type,tmdb_id')
+          .eq('user_id', currentUserId);
+
+        if (existingError) throw existingError;
+
+        const currentIds = {
+          movie: new Set(),
+          tv: new Set(),
+        };
+
+        library.forEach((item) => {
+          const type = item.mediaType === 'tv' ? 'tv' : 'movie';
+          currentIds[type].add(Number(item.id));
+        });
+
+        const stale = { movie: [], tv: [] };
+
+        (existingRows || []).forEach((row) => {
+          const type = row.media_type === 'tv' ? 'tv' : 'movie';
+          const id = Number(row.tmdb_id);
+          if (!currentIds[type].has(id)) stale[type].push(id);
+        });
+
+        for (const mediaType of ['movie', 'tv']) {
+          if (!stale[mediaType].length) continue;
+          const { error: deleteError } = await supabase
+            .from('library_items')
+            .delete()
+            .eq('user_id', currentUserId)
+            .eq('media_type', mediaType)
+            .in('tmdb_id', stale[mediaType]);
+          if (deleteError) throw deleteError;
+        }
+
+        lastCloudSyncRef.current = fingerprint;
+      } catch (err) {
+        setCloudSyncError(err?.message || t.authCloudSyncError);
+      }
+    }, 700);
+
+    return () => clearTimeout(timer);
+  }, [cloudReady, currentUserId, library, t.authCloudSyncError]);
+
+  const signIn = useCallback(async (email, password) => {
+    if (!supabase) return;
+    setAuthBusy(true);
+    setAuthError('');
+    setAuthNotice('');
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) setAuthError(error.message);
+    setAuthBusy(false);
+  }, []);
+
+  const signUp = useCallback(async (email, password) => {
+    if (!supabase) return;
+    setAuthBusy(true);
+    setAuthError('');
+    setAuthNotice('');
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: window.location.origin },
+    });
+    if (error) {
+      setAuthError(error.message);
+    } else if (!data?.session) {
+      setAuthNotice(t.authCheckEmail);
+    }
+    setAuthBusy(false);
+  }, [t.authCheckEmail]);
+
+  const signOut = useCallback(async () => {
+    if (!supabase) return;
+    const { error } = await supabase.auth.signOut();
+    if (error) setAuthError(error.message);
+  }, []);
 
   // в”Ђв”Ђ Close modals with animation в”Ђв”Ђ
   const closeDetails = useCallback(() => {
@@ -561,6 +764,44 @@ export default function App() {
       .slice(0, 20);
   }, [library, peopleView]);
 
+  if (!isSupabaseConfigured || !supabase) {
+    return (
+      <div className="app-shell max-w-[740px] mx-auto px-4 md:px-6 pt-10 pb-12 relative">
+        <div className="glass app-panel p-7 md:p-9 space-y-4">
+          <h2 className="text-2xl font-black">Supabase not configured</h2>
+          <p className="text-sm opacity-80">
+            Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> to your environment variables.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!authReady) {
+    return (
+      <div className="app-shell max-w-[740px] mx-auto px-4 md:px-6 pt-10 pb-12 relative">
+        <div className="glass app-panel p-7 md:p-9">
+          <p className="text-sm opacity-80">{t.loading}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <AuthView
+        t={t}
+        mode={authMode}
+        onModeChange={setAuthMode}
+        onSignIn={signIn}
+        onSignUp={signUp}
+        isBusy={authBusy}
+        error={authError}
+        notice={authNotice}
+      />
+    );
+  }
+
   /* в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ RENDER в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
   return (
     <div className="app-shell max-w-[1180px] mx-auto px-4 md:px-6 pt-5 pb-28 md:pb-12 relative">
@@ -570,20 +811,38 @@ export default function App() {
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 via-violet-500 to-blue-500 text-white font-black text-xl flex items-center justify-center shadow-lg">M</div>
           <p className="text-3xl md:text-[2rem] font-black tracking-tight">MovieLog</p>
         </button>
-        <div className="app-nav-wrap">
-          {[
-            { id: 'catalog', label: t.search },
-            { id: 'library', label: t.shelf },
-            { id: 'stats', label: t.stats },
-            { id: 'settings', label: t.settings }
-          ].map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={`app-nav-btn ${activeTab === tab.id ? 'active' : ''}`}>
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          <div className="app-nav-wrap">
+            {[
+              { id: 'catalog', label: t.search },
+              { id: 'library', label: t.shelf },
+              { id: 'stats', label: t.stats },
+              { id: 'settings', label: t.settings }
+            ].map(tab => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                className={`app-nav-btn ${activeTab === tab.id ? 'active' : ''}`}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <span className="hidden xl:block text-xs opacity-55 max-w-[220px] truncate">
+            {session.user.email}
+          </span>
+          <button
+            type="button"
+            onClick={signOut}
+            className="h-[46px] px-3 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-[11px] md:text-xs font-black uppercase tracking-widest transition-colors"
+          >
+            {t.authLogout}
+          </button>
         </div>
       </div>
+
+      {cloudSyncError && (
+        <div className="mb-5 rounded-xl border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+          {t.authCloudSyncError}: {cloudSyncError}
+        </div>
+      )}
 
       {/* CATALOG */}
       {activeTab === 'catalog' && (
