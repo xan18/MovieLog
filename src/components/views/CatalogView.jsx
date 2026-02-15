@@ -151,7 +151,7 @@ export default function CatalogView({
               style={{ '--stagger-i': i }}
             >
               <div className="media-poster">
-                <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : 'https://via.placeholder.com/500x750'} className="w-full aspect-[2/3] object-cover transition-transform duration-300 group-hover:scale-[1.04]" alt={item.title || item.name} />
+                <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'} className="w-full aspect-[2/3] object-cover transition-transform duration-300 group-hover:scale-[1.04]" alt={item.title || item.name} />
                 {badge && (
                   <div className="media-pill absolute top-2 right-2 text-white uppercase flex items-center gap-1 shadow-lg" style={{ background: badge.bg }}>
                     <span>{badge.icon}</span><span>{badge.label}</span>

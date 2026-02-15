@@ -64,7 +64,7 @@ export default function PersonModal({
                   {selectedPerson.moviesInLibrary.map((item, i) => (
                     <div key={`${item.mediaType}-${item.id}`} onClick={() => { handleClose(); getFullDetails(item); }} className="group cursor-pointer card-stagger" style={{ '--stagger-i': i }}>
                       <div className="relative mb-3 rounded-2xl overflow-hidden shadow-xl transition-transform group-hover:scale-105">
-                        <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : 'https://via.placeholder.com/500x750'} className="w-full aspect-[2/3] object-cover" alt={item.title || item.name} />
+                        <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'} className="w-full aspect-[2/3] object-cover" alt={item.title || item.name} />
                         {item.rating > 0 && <div className="absolute top-2 left-2 bg-yellow-500 text-black text-xs font-black px-2 py-1 rounded-lg">★ {item.rating}</div>}
                       </div>
                       <h3 className="font-bold text-xs mb-1 line-clamp-2">{item.title || item.name}</h3>
@@ -82,7 +82,7 @@ export default function PersonModal({
                   {selectedPerson.allMovies.map((item, i) => (
                     <div key={`${item.mediaType}-${item.id}`} onClick={() => { handleClose(); getFullDetails(item); }} className="group cursor-pointer card-stagger" style={{ '--stagger-i': i }}>
                       <div className="relative mb-3 rounded-2xl overflow-hidden shadow-xl transition-transform group-hover:scale-105">
-                        <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : 'https://via.placeholder.com/500x750'} className="w-full aspect-[2/3] object-cover" alt={item.title || item.name} />
+                        <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'} className="w-full aspect-[2/3] object-cover" alt={item.title || item.name} />
                         {item.inLibrary && (() => {
                           const libItem = library.find(x => x.mediaType === item.mediaType && x.id === item.id);
                           const cfg = libItem && STATUS_BADGE_CONFIG[libItem.status];

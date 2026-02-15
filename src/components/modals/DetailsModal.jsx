@@ -137,7 +137,7 @@ export default function DetailsModal({
                   <span className="franchise-year-chip">{releaseYear || 'TBA'}</span>
                   <span className="franchise-order-chip">#{idx + 1}</span>
                   <div className="franchise-poster-wrap">
-                    <LazyImg src={part.poster_path ? `${IMG_200}${part.poster_path}` : 'https://via.placeholder.com/200x300'} className="franchise-poster" alt={title} />
+                    <LazyImg src={part.poster_path ? `${IMG_200}${part.poster_path}` : '/poster-placeholder.svg'} className="franchise-poster" alt={title} />
                     <div className="franchise-poster-overlay">
                       <p className="franchise-title line-clamp-2">{title}</p>
                     </div>
@@ -157,7 +157,7 @@ export default function DetailsModal({
           <div className="scroll-x themed-x-scroll">
             {selectedItem.recommendations.map(rec => (
               <div key={`${selectedItem.mediaType}-rec-${rec.id}`} onClick={() => getFullDetails({ ...rec, mediaType: selectedItem.mediaType })} className="rec-item">
-                <LazyImg src={rec.poster_path ? `${IMG_200}${rec.poster_path}` : 'https://via.placeholder.com/200x300'} className="w-full aspect-[2/3] object-cover rounded-2xl shadow-xl mb-2" alt={rec.title || rec.name} />
+                <LazyImg src={rec.poster_path ? `${IMG_200}${rec.poster_path}` : '/poster-placeholder.svg'} className="w-full aspect-[2/3] object-cover rounded-2xl shadow-xl mb-2" alt={rec.title || rec.name} />
                 <p className="text-[9px] font-black uppercase truncate text-center">{rec.title || rec.name}</p>
               </div>
             ))}
@@ -324,7 +324,7 @@ export default function DetailsModal({
             ? `${IMG_200}${season.poster_path}`
             : selectedItem.poster_path
               ? `${IMG_200}${selectedItem.poster_path}`
-              : 'https://via.placeholder.com/200x300';
+              : '/poster-placeholder.svg';
           const seasonState = allWatched ? 'completed' : inProgress ? 'in-progress' : 'not-started';
           const seasonStateLabel = allWatched
             ? (t.seasonStateCompleted || 'Completed')
@@ -423,7 +423,7 @@ export default function DetailsModal({
   const renderHeroHead = (extraClass = '') => (
     <div className={`details-hero-head ${extraClass}`.trim()}>
       <LazyImg
-        src={selectedItem.poster_path ? `${IMG_500}${selectedItem.poster_path}` : 'https://via.placeholder.com/200x300'}
+        src={selectedItem.poster_path ? `${IMG_500}${selectedItem.poster_path}` : '/poster-placeholder.svg'}
         className="details-hero-poster"
         alt={displayTitle}
       />

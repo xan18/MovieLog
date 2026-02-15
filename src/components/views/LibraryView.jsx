@@ -83,7 +83,7 @@ export default function LibraryView({
               onTouchCancel={onCardTouchEnd}
             >
               <div onClick={() => onCardClick(item)} className="media-poster cursor-pointer">
-                <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : 'https://via.placeholder.com/500x750'} className="w-full aspect-[2/3] object-cover transition-transform duration-300 group-hover:scale-[1.04]" alt={item.title || item.name} />
+                <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'} className="w-full aspect-[2/3] object-cover transition-transform duration-300 group-hover:scale-[1.04]" alt={item.title || item.name} />
                 {item.rating > 0 && <div className="media-pill absolute top-2 right-2 bg-yellow-500 text-black">{'\u2605'} {item.rating}</div>}
                 {epProgress?.badge && <div className={`media-pill absolute top-2 left-2 ${epProgress.badge.color} shadow-lg`}>{epProgress.badge.text}</div>}
                 <button
