@@ -13,8 +13,6 @@ export default function LibraryView({
   onCardClick,
   openQuickActions,
   onCardContextMenu,
-  onCardTouchStart,
-  onCardTouchEnd,
   setActiveTab,
 }) {
   const canSortByMyRating = shelf !== 'planned';
@@ -77,10 +75,6 @@ export default function LibraryView({
               className="media-card group card-stagger"
               style={{ '--stagger-i': i }}
               onContextMenu={(e) => onCardContextMenu(e, item)}
-              onTouchStart={(e) => onCardTouchStart(e, item)}
-              onTouchEnd={onCardTouchEnd}
-              onTouchMove={onCardTouchEnd}
-              onTouchCancel={onCardTouchEnd}
             >
               <div onClick={() => onCardClick(item)} className="media-poster cursor-pointer">
                 <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'} className="w-full aspect-[2/3] object-cover transition-transform duration-300 group-hover:scale-[1.04]" alt={item.title || item.name} />

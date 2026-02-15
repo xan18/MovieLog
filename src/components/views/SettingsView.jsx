@@ -12,7 +12,6 @@ export default function SettingsView({
   startTab, setStartTab,
   librarySortDefault, setLibrarySortDefault,
   persistCatalogFilters, setPersistCatalogFilters,
-  longPressMs, setLongPressMs,
   importMode, setImportMode,
   reducedMotion, setReducedMotion,
   confirmClear, setConfirmClear,
@@ -36,13 +35,6 @@ export default function SettingsView({
     { value: 'myRating', label: t.byMyRating },
     { value: 'dateAdded', label: t.byDateAdded },
     { value: 'releaseYear', label: t.byReleaseYear },
-  ]), [t]);
-
-  const LONG_PRESS_OPTIONS = useMemo(() => ([
-    { value: 350, label: t.longPressFast },
-    { value: 550, label: t.longPressNormal },
-    { value: 800, label: t.longPressSlow },
-    { value: 1000, label: t.longPressVerySlow },
   ]), [t]);
 
   const IMPORT_MODE_OPTIONS = useMemo(() => ([
@@ -165,15 +157,6 @@ export default function SettingsView({
               options={SORT_DEFAULT_OPTIONS}
               onChange={setLibrarySortDefault}
               ariaLabel={t.defaultLibrarySortLabel}
-            />
-          </div>
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-widest opacity-50 mb-2">{t.longPressDelayLabel}</p>
-            <CustomSelect
-              value={longPressMs}
-              options={LONG_PRESS_OPTIONS}
-              onChange={(value) => setLongPressMs(Number(value))}
-              ariaLabel={t.longPressDelayLabel}
             />
           </div>
           <button

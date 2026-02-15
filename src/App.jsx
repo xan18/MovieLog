@@ -29,7 +29,6 @@ export default function App() {
     startTab, setStartTab,
     librarySortDefault, setLibrarySortDefault,
     persistCatalogFilters, setPersistCatalogFilters,
-    longPressMs, setLongPressMs,
     importMode, setImportMode,
     reducedMotion, setReducedMotion,
   } = useAppSettings();
@@ -83,8 +82,6 @@ export default function App() {
 
   const selectedItemRef = useRef(selectedItem);
   selectedItemRef.current = selectedItem;
-  const longPressTimer = useRef(null);
-  const longPressActivated = useRef(false);
   const skipNextCloudSyncRef = useRef(false);
   const lastCloudSyncRef = useRef('');
 
@@ -373,10 +370,7 @@ export default function App() {
   useEffect(() => {
     const onEsc = (e) => { if (e.key === 'Escape') setQuickActions(null); };
     window.addEventListener('keydown', onEsc);
-    return () => {
-      window.removeEventListener('keydown', onEsc);
-      if (longPressTimer.current) clearTimeout(longPressTimer.current);
-    };
+    return () => window.removeEventListener('keydown', onEsc);
   }, []);
 
   useEffect(() => {
@@ -386,7 +380,7 @@ export default function App() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  /* в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ Context menu & touch в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+  /* в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ Context menu в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
   const openQuickActions = useCallback((item, x, y) => {
     const menuWidth = 240;
     const menuHeight = item.mediaType === 'movie' ? 240 : 330;
@@ -402,23 +396,7 @@ export default function App() {
     openQuickActions(item, e.clientX, e.clientY);
   }, [openQuickActions]);
 
-  const onCardTouchStart = useCallback((e, item) => {
-    if (!e.touches || e.touches.length !== 1) return;
-    const touch = e.touches[0];
-    longPressActivated.current = false;
-    if (longPressTimer.current) clearTimeout(longPressTimer.current);
-    longPressTimer.current = setTimeout(() => {
-      longPressActivated.current = true;
-      openQuickActions(item, touch.clientX, touch.clientY);
-    }, longPressMs);
-  }, [openQuickActions, longPressMs]);
-
-  const onCardTouchEnd = useCallback(() => {
-    if (longPressTimer.current) clearTimeout(longPressTimer.current);
-  }, []);
-
   const onCardClick = (item) => {
-    if (longPressActivated.current) { longPressActivated.current = false; return; }
     getFullDetails(item);
   };
 
@@ -873,8 +851,6 @@ export default function App() {
           onCardClick={onCardClick}
           openQuickActions={openQuickActions}
           onCardContextMenu={onCardContextMenu}
-          onCardTouchStart={onCardTouchStart}
-          onCardTouchEnd={onCardTouchEnd}
           setActiveTab={setActiveTab}
         />
         </div>
@@ -905,7 +881,6 @@ export default function App() {
           startTab={startTab} setStartTab={setStartTab}
           librarySortDefault={librarySortDefault} setLibrarySortDefault={setLibrarySortDefault}
           persistCatalogFilters={persistCatalogFilters} setPersistCatalogFilters={setPersistCatalogFilters}
-          longPressMs={longPressMs} setLongPressMs={setLongPressMs}
           importMode={importMode} setImportMode={setImportMode}
           reducedMotion={reducedMotion} setReducedMotion={setReducedMotion}
           confirmClear={confirmClear} setConfirmClear={setConfirmClear}

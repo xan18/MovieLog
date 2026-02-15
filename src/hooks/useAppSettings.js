@@ -5,14 +5,12 @@ const DEFAULT_APP_SETTINGS = {
   startTab: 'catalog',
   librarySortDefault: 'dateAdded',
   persistCatalogFilters: false,
-  longPressMs: 550,
   importMode: 'replace',
   reducedMotion: false,
 };
 
 const START_TABS = new Set(['catalog', 'library', 'stats', 'settings']);
 const LIBRARY_SORTS = new Set(['imdbRating', 'myRating', 'dateAdded', 'releaseYear']);
-const LONG_PRESS_VALUES = new Set([350, 550, 800, 1000]);
 
 function readAppSettings() {
   try {
@@ -26,15 +24,12 @@ function readAppSettings() {
     const persistCatalogFilters = typeof parsed?.persistCatalogFilters === 'boolean'
       ? parsed.persistCatalogFilters
       : DEFAULT_APP_SETTINGS.persistCatalogFilters;
-    const longPressMs = LONG_PRESS_VALUES.has(Number(parsed?.longPressMs))
-      ? Number(parsed.longPressMs)
-      : DEFAULT_APP_SETTINGS.longPressMs;
     const importMode = parsed?.importMode === 'merge' ? 'merge' : 'replace';
     const reducedMotion = typeof parsed?.reducedMotion === 'boolean'
       ? parsed.reducedMotion
       : DEFAULT_APP_SETTINGS.reducedMotion;
 
-    return { startTab, librarySortDefault, persistCatalogFilters, longPressMs, importMode, reducedMotion };
+    return { startTab, librarySortDefault, persistCatalogFilters, importMode, reducedMotion };
   } catch {
     return DEFAULT_APP_SETTINGS;
   }
@@ -54,7 +49,6 @@ export function useAppSettings() {
   const [startTab, setStartTab] = useState(savedSettings.startTab);
   const [librarySortDefault, setLibrarySortDefault] = useState(savedSettings.librarySortDefault);
   const [persistCatalogFilters, setPersistCatalogFilters] = useState(savedSettings.persistCatalogFilters);
-  const [longPressMs, setLongPressMs] = useState(savedSettings.longPressMs);
   const [importMode, setImportMode] = useState(savedSettings.importMode);
   const [reducedMotion, setReducedMotion] = useState(savedSettings.reducedMotion);
 
@@ -73,12 +67,11 @@ export function useAppSettings() {
       startTab,
       librarySortDefault,
       persistCatalogFilters,
-      longPressMs,
       importMode,
       reducedMotion,
     };
     localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(payload));
-  }, [startTab, librarySortDefault, persistCatalogFilters, longPressMs, importMode, reducedMotion]);
+  }, [startTab, librarySortDefault, persistCatalogFilters, importMode, reducedMotion]);
 
   return {
     theme, setTheme,
@@ -86,7 +79,6 @@ export function useAppSettings() {
     startTab, setStartTab,
     librarySortDefault, setLibrarySortDefault,
     persistCatalogFilters, setPersistCatalogFilters,
-    longPressMs, setLongPressMs,
     importMode, setImportMode,
     reducedMotion, setReducedMotion,
   };
