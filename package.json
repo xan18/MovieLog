@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "env:pull": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pull-env.ps1",
+    "dev:vercel": "npm run env:pull && npm run dev",
     "build": "vite build",
     "preview": "vite preview"
   },
