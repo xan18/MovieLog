@@ -14,12 +14,15 @@ import { I18N } from './i18n/translations.js';
 
 import CatalogView from './components/views/CatalogView.jsx';
 import LibraryView from './components/views/LibraryView.jsx';
+import CollectionsView from './components/views/CollectionsView.jsx';
 import StatsView from './components/views/StatsView.jsx';
 import SettingsView from './components/views/SettingsView.jsx';
 import AuthView from './components/views/AuthView.jsx';
 import DetailsModal from './components/modals/DetailsModal.jsx';
 import QuickActionsMenu from './components/modals/QuickActionsMenu.jsx';
 import PersonModal from './components/modals/PersonModal.jsx';
+
+const AUTHOR_EMAIL = 'umar18main@gmail.com';
 
 /* в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ Main App в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 export default function App() {
@@ -95,6 +98,7 @@ export default function App() {
   } = useLibrary({ library, setLibrary, setSelectedItem, selectedItemRef });
 
   const currentUserId = session?.user?.id || null;
+  const isAuthor = (session?.user?.email || '').toLowerCase() === AUTHOR_EMAIL;
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
@@ -794,6 +798,7 @@ export default function App() {
             {[
               { id: 'catalog', label: t.search },
               { id: 'library', label: t.shelf },
+              { id: 'collections', label: t.collections },
               { id: 'stats', label: t.stats },
               { id: 'settings', label: t.settings }
             ].map(tab => (
@@ -866,6 +871,22 @@ export default function App() {
           peopleView={peopleView} setPeopleView={setPeopleView}
           getPersonDetails={getPersonDetails}
           getFullDetails={getFullDetails}
+        />
+        </div>
+      )}
+
+      {/* COLLECTIONS */}
+      {activeTab === 'collections' && (
+        <div className="tab-enter" key="tab-collections">
+        <CollectionsView
+          t={t}
+          lang={lang}
+          currentUserId={currentUserId}
+          isAuthor={isAuthor}
+          getLibraryEntry={getLibraryEntry}
+          openQuickActions={openQuickActions}
+          onCardClick={onCardClick}
+          STATUS_BADGE_CONFIG={STATUS_BADGE_CONFIG}
         />
         </div>
       )}
@@ -1048,11 +1069,12 @@ export default function App() {
         {[
           { id: 'catalog', icon: '\u{1F50D}', label: t.search },
           { id: 'library', icon: '\u{1F4DA}', label: t.shelf },
+          { id: 'collections', icon: '\u{1F381}', label: t.collections },
           { id: 'stats', icon: '\u{1F4CA}', label: t.stats },
           { id: 'settings', icon: '\u2699\uFE0F', label: t.settings }
         ].map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`flex flex-col items-center px-7 md:px-10 py-4 rounded-[2.5rem] transition-all ${activeTab === tab.id ? 'mobile-nav-active scale-105' : 'opacity-65 hover:opacity-100'}`}>
+            className={`flex flex-col items-center px-4 md:px-6 py-3 rounded-[2.5rem] transition-all ${activeTab === tab.id ? 'mobile-nav-active scale-105' : 'opacity-65 hover:opacity-100'}`}>
             <span className="text-2xl">{tab.icon}</span>
             <span className="mobile-nav-label text-[10px] font-black tracking-tight mt-1">{tab.label}</span>
           </button>

@@ -139,6 +139,46 @@ html, body { overflow-x: hidden; }
       background: rgba(255,255,255,0.16);
       border-color: rgba(255,255,255,0.3);
     }
+    .collections-search-row,
+    .collections-order-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.04);
+    }
+    .collections-action-btn {
+      min-height: 34px;
+      padding: 6px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.06);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      transition: all 0.16s ease;
+    }
+    .collections-action-btn:hover {
+      background: rgba(255,255,255,0.14);
+      border-color: rgba(255,255,255,0.3);
+    }
+    .collections-action-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .collections-action-btn.danger {
+      border-color: rgba(248,113,113,0.45);
+      background: rgba(239,68,68,0.14);
+      color: rgba(254,226,226,0.95);
+    }
+    .collections-action-btn.danger:hover {
+      background: rgba(239,68,68,0.22);
+      border-color: rgba(248,113,113,0.6);
+    }
 
     /* Themes */
     .theme-dark { background-color: #181818; color: #f3f4f6; --accent-rgb: 161,161,170; --accent-solid: #52525b; }
@@ -148,6 +188,7 @@ html, body { overflow-x: hidden; }
 
     .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(20px); }
     .app-panel { border-radius: var(--panel-radius); border: 1px solid var(--panel-border); overflow: hidden; }
+    .app-panel.overflow-visible { overflow: visible; }
     .app-panel-padded { border-radius: var(--panel-radius); border: 1px solid var(--panel-border); }
     .theme-dark .glass {
       background: rgba(31, 31, 31, 0.92);
@@ -598,6 +639,14 @@ html, body { overflow-x: hidden; }
       transform: scale(1.06);
       background: rgba(var(--accent-rgb), 0.88);
       border-color: rgba(var(--accent-rgb), 0.95);
+    }
+    .quick-action-trigger.collections-added-trigger {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      pointer-events: none;
+      background: rgba(16,185,129,0.9);
+      border-color: rgba(16,185,129,0.98);
+      color: #052e16;
     }
     .theme-light .quick-action-trigger {
       background: rgba(15,23,42,0.72);

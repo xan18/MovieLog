@@ -9,7 +9,7 @@ const DEFAULT_APP_SETTINGS = {
   reducedMotion: false,
 };
 
-const START_TABS = new Set(['catalog', 'library', 'stats', 'settings']);
+const START_TABS = new Set(['catalog', 'library', 'collections', 'stats', 'settings']);
 const LIBRARY_SORTS = new Set(['imdbRating', 'myRating', 'dateAdded', 'releaseYear']);
 
 function readAppSettings() {
