@@ -22,7 +22,10 @@ import DetailsModal from './components/modals/DetailsModal.jsx';
 import QuickActionsMenu from './components/modals/QuickActionsMenu.jsx';
 import PersonModal from './components/modals/PersonModal.jsx';
 
-const AUTHOR_EMAIL = 'umar18main@gmail.com';
+const AUTHOR_EMAILS = new Set([
+  'umar18main@gmail.com',
+  'lagerfeed050@gmail.com',
+]);
 
 /* в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ Main App в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 export default function App() {
@@ -98,7 +101,7 @@ export default function App() {
   } = useLibrary({ library, setLibrary, setSelectedItem, selectedItemRef });
 
   const currentUserId = session?.user?.id || null;
-  const isAuthor = (session?.user?.email || '').toLowerCase() === AUTHOR_EMAIL;
+  const isAuthor = AUTHOR_EMAILS.has((session?.user?.email || '').toLowerCase());
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;

@@ -65,7 +65,7 @@ on public.curated_collections
 for insert
 with check (
   owner_user_id = auth.uid()
-  and lower(coalesce(auth.jwt() ->> 'email', '')) = 'umar18main@gmail.com'
+  and lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
 );
 
 drop policy if exists "Author can update own collections" on public.curated_collections;
@@ -74,11 +74,11 @@ on public.curated_collections
 for update
 using (
   owner_user_id = auth.uid()
-  and lower(coalesce(auth.jwt() ->> 'email', '')) = 'umar18main@gmail.com'
+  and lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
 )
 with check (
   owner_user_id = auth.uid()
-  and lower(coalesce(auth.jwt() ->> 'email', '')) = 'umar18main@gmail.com'
+  and lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
 );
 
 drop policy if exists "Author can delete own collections" on public.curated_collections;
@@ -87,7 +87,7 @@ on public.curated_collections
 for delete
 using (
   owner_user_id = auth.uid()
-  and lower(coalesce(auth.jwt() ->> 'email', '')) = 'umar18main@gmail.com'
+  and lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
 );
 
 drop policy if exists "Collection items visible by parent access" on public.curated_collection_items;
@@ -113,7 +113,7 @@ with check (
     from public.curated_collections c
     where c.id = collection_id
       and c.owner_user_id = auth.uid()
-      and lower(coalesce(auth.jwt() ->> 'email', '')) = 'umar18main@gmail.com'
+      and lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
   )
 );
 
@@ -127,7 +127,7 @@ using (
     from public.curated_collections c
     where c.id = collection_id
       and c.owner_user_id = auth.uid()
-      and lower(coalesce(auth.jwt() ->> 'email', '')) = 'umar18main@gmail.com'
+      and lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
   )
 )
 with check (
@@ -136,7 +136,7 @@ with check (
     from public.curated_collections c
     where c.id = collection_id
       and c.owner_user_id = auth.uid()
-      and lower(coalesce(auth.jwt() ->> 'email', '')) = 'umar18main@gmail.com'
+      and lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
   )
 );
 
@@ -150,7 +150,7 @@ using (
     from public.curated_collections c
     where c.id = collection_id
       and c.owner_user_id = auth.uid()
-      and lower(coalesce(auth.jwt() ->> 'email', '')) = 'umar18main@gmail.com'
+      and lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
   )
 );
 
