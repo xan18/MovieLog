@@ -664,7 +664,7 @@ export default function CollectionsView({
 
           {!searchLoading && searchResults.length > 0 && (
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {searchResults.map((item, index) => {
+              {searchResults.map((item) => {
                 const alreadyInCollection = collectionItemKeySet.has(`${item.mediaType}-${Number(item.id)}`);
                 const year = getYear(item);
                 const genre = (item.genre_ids?.length > 0 || item.genres?.length > 0)
@@ -679,8 +679,7 @@ export default function CollectionsView({
                     onTouchMove={onTouchMove}
                     onTouchEnd={onTouchEnd}
                     onTouchCancel={onTouchCancel}
-                    className="media-card group cursor-pointer card-stagger"
-                    style={{ '--stagger-i': index }}
+                    className="media-card group cursor-pointer"
                   >
                     <div className="media-poster">
                       <LazyImg
@@ -799,7 +798,7 @@ export default function CollectionsView({
           )}
 
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {collectionItems.map((item, index) => {
+            {collectionItems.map((item) => {
               const libEntry = getLibraryEntry(item.mediaType, item.id);
               const badge = libEntry && STATUS_BADGE_CONFIG[libEntry.status];
               const year = getYear(item);
@@ -813,8 +812,7 @@ export default function CollectionsView({
                   onTouchMove={onTouchMove}
                   onTouchEnd={onTouchEnd}
                   onTouchCancel={onTouchCancel}
-                  className="media-card group cursor-pointer card-stagger"
-                  style={{ '--stagger-i': index }}
+                  className="media-card group cursor-pointer"
                 >
                   <div className="media-poster">
                     <LazyImg
