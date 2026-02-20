@@ -70,6 +70,7 @@ export default function CollectionsView({
   const [searchResults, setSearchResults] = useState([]);
   const debouncedSearchQuery = useDebounce(searchQuery.trim(), 350);
   const collectionModalCloseTimerRef = useRef(null);
+  const collectionSearchInputRef = useRef(null);
 
   const TMDB_LANG = lang === 'ru' ? 'ru-RU' : 'en-US';
   const {
@@ -253,6 +254,14 @@ export default function CollectionsView({
   const clearFeedback = () => {
     setManageError('');
     setManageNotice('');
+  };
+
+  const clearCollectionSearch = () => {
+    setSearchQuery('');
+    setSearchError('');
+    setSearchResults([]);
+    setSearchLoading(false);
+    if (collectionSearchInputRef.current) collectionSearchInputRef.current.focus();
   };
 
   const openCollectionModal = (collectionId) => {
@@ -935,12 +944,26 @@ export default function CollectionsView({
                 ariaLabel={t.collectionsSearchTypeLabel}
               />
             </div>
-            <input
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder={t.collectionsSearchPlaceholder}
-              className="app-input md:col-span-3 w-full bg-white/5 border border-white/10 px-4 py-3 text-sm font-semibold"
-            />
+            <div className="md:col-span-3 relative">
+              <input
+                ref={collectionSearchInputRef}
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder={t.collectionsSearchPlaceholder}
+                className="app-input w-full bg-white/5 border border-white/10 px-4 pr-12 py-3 text-sm font-semibold"
+              />
+              {searchQuery.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearCollectionSearch}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full border border-white/20 bg-white/10 hover:bg-white/18 text-white/75 hover:text-white transition-all"
+                  aria-label={t.collectionsSearchClear}
+                  title={t.collectionsSearchClear}
+                >
+                  {'\u2715'}
+                </button>
+              )}
+            </div>
           </div>
           <p className="text-[11px] opacity-60">{t.collectionsSearchAutoHint}</p>
 
