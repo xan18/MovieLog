@@ -390,6 +390,17 @@ export default function DetailsModal({
                 {loadingSeason === season.season_number && <p className="text-xs opacity-40 text-center py-6">{t.loading}</p>}
                 {seasonEpisodes[season.season_number] && (
                   <div className="space-y-0">
+                    {(() => {
+                      const today = new Date(); today.setHours(0, 0, 0, 0);
+                      const airedEps = seasonEpisodes[season.season_number].filter(ep => ep.air_date && new Date(ep.air_date) <= today).map(ep => ep.episode_number);
+                      const allAiredWatched = airedEps.length > 0 && airedEps.every(ep => watched.includes(ep));
+                      if (airedEps.length === 0) return null;
+                      return (
+                        <button onClick={() => handleSeasonToggle(selectedItem.id, season.season_number, season.episode_count, airedEps)} className={`w-full mb-3 py-3 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all border ${allAiredWatched ? 'bg-green-600/15 border-green-500/25 text-green-400 hover:bg-green-600/25' : 'bg-white/5 border-white/10 opacity-60 hover:opacity-100 hover:bg-white/10'}`}>
+                          {allAiredWatched ? t.allWatched : t.markAllWatched}
+                        </button>
+                      );
+                    })()}
                     {seasonEpisodes[season.season_number].map(ep => {
                       const isWatched = watched.includes(ep.episode_number);
                       const airDate = ep.air_date ? new Date(ep.air_date).toLocaleDateString(DATE_LOCALE, { day: 'numeric', month: 'long', year: 'numeric' }) : null;
@@ -408,17 +419,6 @@ export default function DetailsModal({
                         </button>
                       );
                     })}
-                    {(() => {
-                      const today = new Date(); today.setHours(0, 0, 0, 0);
-                      const airedEps = seasonEpisodes[season.season_number].filter(ep => ep.air_date && new Date(ep.air_date) <= today).map(ep => ep.episode_number);
-                      const allAiredWatched = airedEps.length > 0 && airedEps.every(ep => watched.includes(ep));
-                      if (airedEps.length === 0) return null;
-                      return (
-                        <button onClick={() => handleSeasonToggle(selectedItem.id, season.season_number, season.episode_count, airedEps)} className={`w-full mt-3 py-3 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all border ${allAiredWatched ? 'bg-green-600/15 border-green-500/25 text-green-400 hover:bg-green-600/25' : 'bg-white/5 border-white/10 opacity-60 hover:opacity-100 hover:bg-white/10'}`}>
-                          {allAiredWatched ? t.allWatched : t.markAllWatched}
-                        </button>
-                      );
-                    })()}
                   </div>
                 )}
               </div>
