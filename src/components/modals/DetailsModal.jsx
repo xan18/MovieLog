@@ -57,6 +57,15 @@ export default function DetailsModal({
 
   const hasBackdrop = Boolean(selectedItem.backdrop_path);
   const displayTitle = selectedItem.title || selectedItem.name;
+  const originalTitle = (
+    selectedItem.mediaType === 'movie'
+      ? (selectedItem.original_title || selectedItem.original_name)
+      : (selectedItem.original_name || selectedItem.original_title)
+  ) || '';
+  const showOriginalTitle = (
+    originalTitle.trim().length > 0
+    && originalTitle.trim().toLowerCase() !== String(displayTitle || '').trim().toLowerCase()
+  );
   const releaseYear = selectedItem.mediaType === 'movie'
     ? (selectedItem.release_date ? new Date(selectedItem.release_date).getFullYear() : null)
     : (selectedItem.first_air_date ? new Date(selectedItem.first_air_date).getFullYear() : null);
@@ -429,6 +438,9 @@ export default function DetailsModal({
       />
       <div className="details-hero-copy">
         <h2 className="details-hero-title">{displayTitle}</h2>
+        {showOriginalTitle && (
+          <p className="details-hero-original">{originalTitle}</p>
+        )}
         {heroMeta.length > 0 && (
           <div className="details-hero-stats">
             {heroMeta.map((meta, idx) => (
