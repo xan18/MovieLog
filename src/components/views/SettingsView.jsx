@@ -14,6 +14,8 @@ export default function SettingsView({
   persistCatalogFilters, setPersistCatalogFilters,
   importMode, setImportMode,
   reducedMotion, setReducedMotion,
+  isAdmin,
+  authorModeEnabled, setAuthorModeEnabled,
   confirmClear, setConfirmClear,
 }) {
   const LANGUAGE_OPTIONS = getLanguageOptions(t);
@@ -186,6 +188,21 @@ export default function SettingsView({
               <span className="settings-toggle-dot" />
             </span>
           </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setAuthorModeEnabled(prev => !prev)}
+              className={`settings-toggle ${authorModeEnabled ? 'active' : ''}`}
+            >
+              <span className="settings-toggle-copy">
+                <span className="settings-toggle-title">{t.authorModeToggleLabel}</span>
+                <span className="settings-toggle-hint">{t.authorModeToggleHint}</span>
+              </span>
+              <span className="settings-toggle-switch">
+                <span className="settings-toggle-dot" />
+              </span>
+            </button>
+          )}
         </div>
       </div>
 

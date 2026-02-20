@@ -7,6 +7,7 @@ const DEFAULT_APP_SETTINGS = {
   persistCatalogFilters: false,
   importMode: 'replace',
   reducedMotion: false,
+  authorModeEnabled: true,
 };
 
 const START_TABS = new Set(['catalog', 'library', 'collections', 'stats', 'settings']);
@@ -28,8 +29,18 @@ function readAppSettings() {
     const reducedMotion = typeof parsed?.reducedMotion === 'boolean'
       ? parsed.reducedMotion
       : DEFAULT_APP_SETTINGS.reducedMotion;
+    const authorModeEnabled = typeof parsed?.authorModeEnabled === 'boolean'
+      ? parsed.authorModeEnabled
+      : DEFAULT_APP_SETTINGS.authorModeEnabled;
 
-    return { startTab, librarySortDefault, persistCatalogFilters, importMode, reducedMotion };
+    return {
+      startTab,
+      librarySortDefault,
+      persistCatalogFilters,
+      importMode,
+      reducedMotion,
+      authorModeEnabled,
+    };
   } catch {
     return DEFAULT_APP_SETTINGS;
   }
@@ -51,6 +62,7 @@ export function useAppSettings() {
   const [persistCatalogFilters, setPersistCatalogFilters] = useState(savedSettings.persistCatalogFilters);
   const [importMode, setImportMode] = useState(savedSettings.importMode);
   const [reducedMotion, setReducedMotion] = useState(savedSettings.reducedMotion);
+  const [authorModeEnabled, setAuthorModeEnabled] = useState(savedSettings.authorModeEnabled);
 
   useEffect(() => {
     const bodyBg = document.getElementById('body-bg');
@@ -69,9 +81,17 @@ export function useAppSettings() {
       persistCatalogFilters,
       importMode,
       reducedMotion,
+      authorModeEnabled,
     };
     localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(payload));
-  }, [startTab, librarySortDefault, persistCatalogFilters, importMode, reducedMotion]);
+  }, [
+    startTab,
+    librarySortDefault,
+    persistCatalogFilters,
+    importMode,
+    reducedMotion,
+    authorModeEnabled,
+  ]);
 
   return {
     theme, setTheme,
@@ -81,5 +101,6 @@ export function useAppSettings() {
     persistCatalogFilters, setPersistCatalogFilters,
     importMode, setImportMode,
     reducedMotion, setReducedMotion,
+    authorModeEnabled, setAuthorModeEnabled,
   };
 }

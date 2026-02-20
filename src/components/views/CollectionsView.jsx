@@ -32,7 +32,10 @@ export default function CollectionsView({
   t,
   lang,
   currentUserId,
+  isAdmin,
   isAuthor,
+  authorModeEnabled,
+  setAuthorModeEnabled,
   getLibraryEntry,
   openQuickActions,
   onCardClick,
@@ -439,8 +442,29 @@ export default function CollectionsView({
           <h2 className="app-page-title">{t.collections.toUpperCase()}</h2>
           <p className="text-xs opacity-55 mt-2">{t.collectionsSubtitle}</p>
         </div>
-        {isAuthor && (
-          <div className="tag h-fit mt-2">{t.collectionsAuthorMode}</div>
+        {isAdmin && (
+          <div className="flex items-center gap-2 mt-2">
+            <span className="tag h-fit">{t.collectionsAuthorMode}</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={authorModeEnabled}
+              aria-label={t.authorModeToggleLabel || t.collectionsAuthorMode}
+              title={t.authorModeToggleLabel || t.collectionsAuthorMode}
+              onClick={() => setAuthorModeEnabled((prev) => !prev)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full border px-[2px] transition-colors ${
+                authorModeEnabled
+                  ? 'border-blue-300/70 bg-blue-500/60'
+                  : 'border-slate-400/45 bg-slate-900/60'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  authorModeEnabled ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
         )}
       </div>
 

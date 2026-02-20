@@ -22,7 +22,7 @@ import DetailsModal from './components/modals/DetailsModal.jsx';
 import QuickActionsMenu from './components/modals/QuickActionsMenu.jsx';
 import PersonModal from './components/modals/PersonModal.jsx';
 
-const AUTHOR_EMAILS = new Set([
+const ADMIN_EMAILS = new Set([
   'umar18main@gmail.com',
   'lagerfeed050@gmail.com',
 ]);
@@ -37,6 +37,7 @@ export default function App() {
     persistCatalogFilters, setPersistCatalogFilters,
     importMode, setImportMode,
     reducedMotion, setReducedMotion,
+    authorModeEnabled, setAuthorModeEnabled,
   } = useAppSettings();
 
   const t = I18N[lang] || I18N.ru;
@@ -106,7 +107,9 @@ export default function App() {
   } = useLibrary({ library, setLibrary, setSelectedItem, selectedItemRef });
 
   const currentUserId = session?.user?.id || null;
-  const isAuthor = AUTHOR_EMAILS.has((session?.user?.email || '').toLowerCase());
+  const currentUserEmail = (session?.user?.email || '').toLowerCase();
+  const isAdmin = ADMIN_EMAILS.has(currentUserEmail);
+  const isAuthor = isAdmin && authorModeEnabled;
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
@@ -997,7 +1000,10 @@ export default function App() {
           t={t}
           lang={lang}
           currentUserId={currentUserId}
+          isAdmin={isAdmin}
           isAuthor={isAuthor}
+          authorModeEnabled={authorModeEnabled}
+          setAuthorModeEnabled={setAuthorModeEnabled}
           getLibraryEntry={getLibraryEntry}
           openQuickActions={openQuickActions}
           onCardClick={onCardClick}
@@ -1019,6 +1025,9 @@ export default function App() {
           persistCatalogFilters={persistCatalogFilters} setPersistCatalogFilters={setPersistCatalogFilters}
           importMode={importMode} setImportMode={setImportMode}
           reducedMotion={reducedMotion} setReducedMotion={setReducedMotion}
+          isAdmin={isAdmin}
+          authorModeEnabled={authorModeEnabled}
+          setAuthorModeEnabled={setAuthorModeEnabled}
           confirmClear={confirmClear} setConfirmClear={setConfirmClear}
         />
         </div>
