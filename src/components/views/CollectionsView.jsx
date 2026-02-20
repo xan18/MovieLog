@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { CustomSelect, LazyImg } from '../ui.jsx';
 import { IMG_500 } from '../../constants/appConstants.js';
 import { getYear } from '../../utils/appUtils.js';
@@ -46,6 +47,7 @@ export default function CollectionsView({
   const [collectionsError, setCollectionsError] = useState('');
   const [selectedCollectionId, setSelectedCollectionId] = useState('');
   const [isCollectionModalOpen, setCollectionModalOpen] = useState(false);
+  const [isCollectionModalClosing, setCollectionModalClosing] = useState(false);
 
   const [collectionRows, setCollectionRows] = useState([]);
   const [collectionItems, setCollectionItems] = useState([]);
@@ -64,6 +66,7 @@ export default function CollectionsView({
   const [searchError, setSearchError] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const debouncedSearchQuery = useDebounce(searchQuery.trim(), 350);
+  const collectionModalCloseTimerRef = useRef(null);
 
   const TMDB_LANG = lang === 'ru' ? 'ru-RU' : 'en-US';
   const {
@@ -193,22 +196,28 @@ export default function CollectionsView({
     if (!collections.length) {
       setSelectedCollectionId('');
       setCollectionModalOpen(false);
+      setCollectionModalClosing(false);
       return;
     }
     if (selectedCollectionId && !collections.some((collection) => collection.id === selectedCollectionId)) {
       setSelectedCollectionId('');
       setCollectionModalOpen(false);
+      setCollectionModalClosing(false);
     }
   }, [collections, selectedCollectionId]);
 
   useEffect(() => {
     if (!isCollectionModalOpen) return;
     const onEsc = (event) => {
-      if (event.key === 'Escape') setCollectionModalOpen(false);
+      if (event.key === 'Escape') closeCollectionModal();
     };
     window.addEventListener('keydown', onEsc);
     return () => window.removeEventListener('keydown', onEsc);
-  }, [isCollectionModalOpen]);
+  }, [isCollectionModalOpen, isCollectionModalClosing]);
+
+  useEffect(() => () => {
+    if (collectionModalCloseTimerRef.current) clearTimeout(collectionModalCloseTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!selectedCollection) {
@@ -234,17 +243,28 @@ export default function CollectionsView({
   };
 
   const openCollectionModal = (collectionId) => {
+    if (collectionModalCloseTimerRef.current) {
+      clearTimeout(collectionModalCloseTimerRef.current);
+      collectionModalCloseTimerRef.current = null;
+    }
+    setCollectionModalClosing(false);
     setSelectedCollectionId(collectionId);
     setCollectionModalOpen(true);
     clearFeedback();
   };
 
-  const closeCollectionModal = () => {
-    setCollectionModalOpen(false);
-    setSearchQuery('');
-    setSearchError('');
-    setSearchResults([]);
-  };
+  function closeCollectionModal() {
+    if (isCollectionModalClosing || !isCollectionModalOpen) return;
+    setCollectionModalClosing(true);
+    collectionModalCloseTimerRef.current = setTimeout(() => {
+      setCollectionModalOpen(false);
+      setCollectionModalClosing(false);
+      setSearchQuery('');
+      setSearchError('');
+      setSearchResults([]);
+      collectionModalCloseTimerRef.current = null;
+    }, 220);
+  }
 
   const handleCreateCollection = async (event) => {
     event.preventDefault();
@@ -334,6 +354,7 @@ export default function CollectionsView({
 
     setSelectedCollectionId('');
     setCollectionModalOpen(false);
+    setCollectionModalClosing(false);
     setManageNotice(t.collectionsDeleted);
     await loadCollections();
     setMutating(false);
@@ -610,12 +631,16 @@ export default function CollectionsView({
         </div>
       )}
 
-      {isCollectionModalOpen && selectedCollection && (
-        <div className="fixed inset-0 z-[190] modal-overlay p-3 md:p-6" onClick={closeCollectionModal}>
-          <div
-            className="collections-modal-panel max-w-6xl mx-auto h-[92vh] overflow-y-auto space-y-4 pr-1"
-            onClick={(event) => event.stopPropagation()}
-          >
+      {isCollectionModalOpen && selectedCollection && typeof document !== 'undefined' && createPortal((
+        <div
+          className={`fixed inset-0 z-[95] collections-modal-backdrop p-3 md:p-6 ${isCollectionModalClosing ? 'modal-exit' : 'modal-enter'}`}
+          onClick={closeCollectionModal}
+        >
+          <div className="collections-modal-shell w-full h-full flex items-start md:items-center justify-center">
+            <div
+              className="collections-modal-panel w-full h-[92vh] overflow-y-auto space-y-4"
+              onClick={(event) => event.stopPropagation()}
+            >
             <div className="glass app-panel p-5 space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -949,9 +974,10 @@ export default function CollectionsView({
           </div>
         </>
       )}
+            </div>
           </div>
         </div>
-      )}
+      ), document.body)}
     </div>
   );
 }
