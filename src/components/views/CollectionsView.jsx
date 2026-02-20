@@ -45,6 +45,7 @@ export default function CollectionsView({
   const [collectionsLoading, setCollectionsLoading] = useState(true);
   const [collectionsError, setCollectionsError] = useState('');
   const [selectedCollectionId, setSelectedCollectionId] = useState('');
+  const [isCollectionModalOpen, setCollectionModalOpen] = useState(false);
 
   const [collectionRows, setCollectionRows] = useState([]);
   const [collectionItems, setCollectionItems] = useState([]);
@@ -97,6 +98,7 @@ export default function CollectionsView({
   const canManageSelected = Boolean(
     isAuthor
     && selectedCollection
+    && isCollectionModalOpen
   );
   const collectionItemKeySet = useMemo(
     () => new Set(collectionRows.map((row) => `${row.media_type}-${Number(row.tmdb_id)}`)),
@@ -190,12 +192,23 @@ export default function CollectionsView({
   useEffect(() => {
     if (!collections.length) {
       setSelectedCollectionId('');
+      setCollectionModalOpen(false);
       return;
     }
-    if (!collections.some((collection) => collection.id === selectedCollectionId)) {
-      setSelectedCollectionId(collections[0].id);
+    if (selectedCollectionId && !collections.some((collection) => collection.id === selectedCollectionId)) {
+      setSelectedCollectionId('');
+      setCollectionModalOpen(false);
     }
   }, [collections, selectedCollectionId]);
+
+  useEffect(() => {
+    if (!isCollectionModalOpen) return;
+    const onEsc = (event) => {
+      if (event.key === 'Escape') setCollectionModalOpen(false);
+    };
+    window.addEventListener('keydown', onEsc);
+    return () => window.removeEventListener('keydown', onEsc);
+  }, [isCollectionModalOpen]);
 
   useEffect(() => {
     if (!selectedCollection) {
@@ -218,6 +231,19 @@ export default function CollectionsView({
   const clearFeedback = () => {
     setManageError('');
     setManageNotice('');
+  };
+
+  const openCollectionModal = (collectionId) => {
+    setSelectedCollectionId(collectionId);
+    setCollectionModalOpen(true);
+    clearFeedback();
+  };
+
+  const closeCollectionModal = () => {
+    setCollectionModalOpen(false);
+    setSearchQuery('');
+    setSearchError('');
+    setSearchResults([]);
   };
 
   const handleCreateCollection = async (event) => {
@@ -251,7 +277,10 @@ export default function CollectionsView({
     setCreateDraft(createEmptyDraft());
     setManageNotice(t.collectionsCreated);
     await loadCollections();
-    if (data?.id) setSelectedCollectionId(data.id);
+    if (data?.id) {
+      setSelectedCollectionId(data.id);
+      setCollectionModalOpen(true);
+    }
     setMutating(false);
   };
 
@@ -304,6 +333,7 @@ export default function CollectionsView({
     }
 
     setSelectedCollectionId('');
+    setCollectionModalOpen(false);
     setManageNotice(t.collectionsDeleted);
     await loadCollections();
     setMutating(false);
@@ -474,21 +504,34 @@ export default function CollectionsView({
       )}
 
       {!collectionsLoading && collections.length > 0 && (
-        <div className="flex gap-3 overflow-x-auto no-scrollbar">
+        <div className="collections-grid">
           {collections.map((collection) => {
             const title = getLocalized(lang, collection.title_ru, collection.title_en) || t.collectionsUntitled;
-            const selected = selectedCollectionId === collection.id;
+            const description = getLocalized(lang, collection.description_ru, collection.description_en);
             const visibilityLabel = collection.visibility === 'private'
               ? t.collectionsVisibilityPrivate
               : t.collectionsVisibilityPublic;
+            const updatedAt = collection.updated_at
+              ? new Date(collection.updated_at).toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'en-US')
+              : '';
             return (
               <button
                 key={collection.id}
                 type="button"
-                onClick={() => setSelectedCollectionId(collection.id)}
-                className={`shelf-pill ${selected ? 'active' : ''}`}
+                onClick={() => openCollectionModal(collection.id)}
+                className="collections-large-card"
               >
-                {title} | {visibilityLabel}
+                <div className="collections-large-card-head">
+                  <p className="collections-large-card-title">{title}</p>
+                  <span className="tag shrink-0">{visibilityLabel}</span>
+                </div>
+                <p className={`collections-large-card-description ${description ? '' : 'opacity-45'}`}>
+                  {description || t.collectionsEmptyHint}
+                </p>
+                <div className="collections-large-card-foot">
+                  <span className="text-xs opacity-55">{updatedAt}</span>
+                  <span className="collections-large-card-open">{t.details}</span>
+                </div>
               </button>
             );
           })}
@@ -506,29 +549,6 @@ export default function CollectionsView({
           <div className="empty-state-icon" aria-hidden="true">{'\u{1F4DA}'}</div>
           <p className="empty-state-title">{t.collectionsNoCollectionsTitle}</p>
           <p className="empty-state-hint">{t.collectionsNoCollectionsHint}</p>
-        </div>
-      )}
-
-      {selectedCollection && (
-        <div className="glass app-panel p-5 space-y-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <p className="text-lg font-black">
-              {getLocalized(lang, selectedCollection.title_ru, selectedCollection.title_en) || t.collectionsUntitled}
-            </p>
-            <div className="flex items-center gap-2">
-              <span className="tag">
-                {selectedCollection.visibility === 'private'
-                  ? t.collectionsVisibilityPrivate
-                  : t.collectionsVisibilityPublic}
-              </span>
-              <span className="tag">{collectionItems.length} {t.collectionsItemsCount}</span>
-            </div>
-          </div>
-          {getLocalized(lang, selectedCollection.description_ru, selectedCollection.description_en) && (
-            <p className="text-sm opacity-80 leading-relaxed">
-              {getLocalized(lang, selectedCollection.description_ru, selectedCollection.description_en)}
-            </p>
-          )}
         </div>
       )}
 
@@ -578,6 +598,55 @@ export default function CollectionsView({
           </form>
         </div>
       )}
+
+      {!isCollectionModalOpen && manageError && (
+        <div className="rounded-2xl border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+          {manageError}
+        </div>
+      )}
+      {!isCollectionModalOpen && manageNotice && (
+        <div className="rounded-2xl border border-emerald-400/35 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+          {manageNotice}
+        </div>
+      )}
+
+      {isCollectionModalOpen && selectedCollection && (
+        <div className="fixed inset-0 z-[190] modal-overlay p-3 md:p-6" onClick={closeCollectionModal}>
+          <div
+            className="collections-modal-panel max-w-6xl mx-auto h-[92vh] overflow-y-auto space-y-4 pr-1"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="glass app-panel p-5 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xl md:text-2xl font-black leading-tight">
+                    {getLocalized(lang, selectedCollection.title_ru, selectedCollection.title_en) || t.collectionsUntitled}
+                  </p>
+                  {getLocalized(lang, selectedCollection.description_ru, selectedCollection.description_en) && (
+                    <p className="text-sm opacity-80 leading-relaxed mt-2">
+                      {getLocalized(lang, selectedCollection.description_ru, selectedCollection.description_en)}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={closeCollectionModal}
+                  className="collections-modal-close"
+                  aria-label={t.close}
+                  title={t.close}
+                >
+                  {'\u2715'}
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="tag">
+                  {selectedCollection.visibility === 'private'
+                    ? t.collectionsVisibilityPrivate
+                    : t.collectionsVisibilityPublic}
+                </span>
+                <span className="tag">{collectionItems.length} {t.collectionsItemsCount}</span>
+              </div>
+            </div>
 
       {canManageSelected && (
         <div className="glass app-panel overflow-visible p-5 space-y-4">
@@ -879,6 +948,9 @@ export default function CollectionsView({
             })}
           </div>
         </>
+      )}
+          </div>
+        </div>
       )}
     </div>
   );
