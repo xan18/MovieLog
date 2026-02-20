@@ -427,14 +427,17 @@ export default function CollectionsView({
     clearFeedback();
 
     const highestSortOrder = collectionRows.reduce((max, row) => Math.max(max, Number(row.sort_order) || 0), 0);
-    const { error } = await supabase
+    const nextSortOrder = highestSortOrder + 1;
+    const { data, error } = await supabase
       .from('curated_collection_items')
       .upsert({
         collection_id: selectedCollectionId,
         media_type: item.mediaType,
         tmdb_id: Number(item.id),
-        sort_order: highestSortOrder + 1,
-      }, { onConflict: 'collection_id,media_type,tmdb_id' });
+        sort_order: nextSortOrder,
+      }, { onConflict: 'collection_id,media_type,tmdb_id' })
+      .select('id, collection_id, media_type, tmdb_id, sort_order, created_at')
+      .single();
 
     if (error) {
       setManageError(error.message);
@@ -442,8 +445,37 @@ export default function CollectionsView({
       return;
     }
 
+    if (!data?.id) {
+      setManageError(t.networkError);
+      setMutating(false);
+      return;
+    }
+
+    const insertedRow = {
+      ...data,
+      sort_order: Number(data.sort_order) || nextSortOrder,
+    };
+
+    setCollectionRows((prev) => {
+      if (prev.some((row) => String(row.id) === String(insertedRow.id))) return prev;
+      return [...prev, insertedRow];
+    });
+
+    setCollectionItems((prev) => {
+      if (prev.some((entry) => String(entry._collectionItemId) === String(insertedRow.id))) return prev;
+      return [
+        ...prev,
+        {
+          ...item,
+          id: Number(item.id),
+          mediaType: item.mediaType,
+          _collectionItemId: insertedRow.id,
+          _sortOrder: insertedRow.sort_order,
+        },
+      ];
+    });
+
     setManageNotice(t.collectionsItemAdded);
-    await loadCollectionItems(selectedCollectionId);
     setMutating(false);
   };
 
@@ -463,8 +495,9 @@ export default function CollectionsView({
       return;
     }
 
+    setCollectionRows((prev) => prev.filter((row) => String(row.id) !== String(collectionItemId)));
+    setCollectionItems((prev) => prev.filter((item) => String(item._collectionItemId) !== String(collectionItemId)));
     setManageNotice(t.collectionsItemRemoved);
-    await loadCollectionItems(selectedCollectionId);
     setMutating(false);
   };
 
