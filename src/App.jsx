@@ -687,7 +687,7 @@ export default function App() {
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 p-4" onClick={() => setDeleteModal(null)}>
           <div className="w-full max-w-md glass app-panel-padded p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="text-center mb-6">
-              <div className="text-5xl mb-4">Р Р†РЎв„ўР’В Р С—РЎвЂР РЏ</div>
+              <div className="text-5xl mb-4">{'\u26A0\uFE0F'}</div>
               <h3 className="text-2xl font-black mb-3">{t.deleteConfirmTitle}</h3>
               <p className="text-sm opacity-80 mb-2">{deleteModal.title}</p>
               <p className="text-xs opacity-60">{deleteModal.mediaType === 'tv' ? t.deleteConfirmTv : t.deleteConfirmMovie}</p>
