@@ -4,12 +4,24 @@ import { getYear } from '../../utils/appUtils.js';
 import { IMG_500 } from '../../constants/appConstants.js';
 import { useQuickActionGesture } from '../../hooks/useQuickActionGesture.js';
 
+const pickDisplayTitle = (item, lang) => {
+  if (!item) return '';
+  const isRu = lang === 'ru';
+  if (item.mediaType === 'movie') {
+    if (isRu) return item.title_ru || item.title || item.title_en || item.original_title || '';
+    return item.title_en || item.title || item.title_ru || item.original_title || '';
+  }
+  if (isRu) return item.name_ru || item.name || item.name_en || item.original_name || '';
+  return item.name_en || item.name || item.name_ru || item.original_name || '';
+};
+
 export default function LibraryView({
   shown, library,
   libraryType, setLibraryType,
   shelf, setShelf,
   sortBy, setSortBy,
   MOVIE_STATUSES, TV_STATUSES,
+  lang,
   t,
   onCardClick,
   openQuickActions,
@@ -70,6 +82,7 @@ export default function LibraryView({
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
         {shown.map((item, i) => {
+          const displayTitle = pickDisplayTitle(item, lang);
           const epProgress = (() => {
             if (item.mediaType !== 'tv') return null;
             const w = item.watchedEpisodes || {};
@@ -95,7 +108,7 @@ export default function LibraryView({
               onTouchCancel={onTouchCancel}
             >
               <div onClick={() => handleCardClick(item)} className="media-poster cursor-pointer">
-                <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'} className="w-full aspect-[2/3] object-cover transition-transform duration-300 group-hover:scale-[1.04]" alt={item.title || item.name} />
+                <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'} className="w-full aspect-[2/3] object-cover transition-transform duration-300 group-hover:scale-[1.04]" alt={displayTitle} />
                 {item.rating > 0 && <div className="media-pill absolute top-2 right-2 bg-yellow-500 text-black">{'\u2605'} {item.rating}</div>}
                 {epProgress?.badge && <div className={`media-pill absolute top-2 left-2 ${epProgress.badge.color} shadow-lg`}>{epProgress.badge.text}</div>}
                 <button
@@ -128,7 +141,7 @@ export default function LibraryView({
                   />
                 </div>
               )}
-              <h3 className="media-title line-clamp-2">{item.title || item.name}</h3>
+              <h3 className="media-title line-clamp-2">{displayTitle}</h3>
               <p className="media-meta font-normal">{getYear(item)}</p>
             </div>
           );

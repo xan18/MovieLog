@@ -266,6 +266,90 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [cloudReady, currentUserId, library, t.authCloudSyncError]);
 
+  useEffect(() => {
+    if (!Array.isArray(library) || library.length === 0) return;
+
+    const localeKey = lang === 'ru' ? 'ru' : 'en';
+    const getLocalizedField = (item) => (
+      item.mediaType === 'tv'
+        ? (localeKey === 'ru' ? 'name_ru' : 'name_en')
+        : (localeKey === 'ru' ? 'title_ru' : 'title_en')
+    );
+    const getBaseField = (item) => (item.mediaType === 'tv' ? 'name' : 'title');
+
+    const itemsToFetch = library.filter((item) => {
+      const localizedField = getLocalizedField(item);
+      return !String(item?.[localizedField] || '').trim();
+    });
+
+    if (itemsToFetch.length === 0) return;
+
+    let cancelled = false;
+
+    const hydrateLocalizedLibraryTitles = async () => {
+      const updates = new Map();
+      const chunkSize = 6;
+
+      for (let index = 0; index < itemsToFetch.length; index += chunkSize) {
+        if (cancelled) return;
+        const chunk = itemsToFetch.slice(index, index + chunkSize);
+        const results = await Promise.all(
+          chunk.map(async (item) => {
+            try {
+              const response = await fetch(tmdbUrl(`/${item.mediaType}/${item.id}`, { language: TMDB_LANG }));
+              if (!response.ok) return null;
+              const detail = await response.json();
+              const localizedTitle = item.mediaType === 'tv'
+                ? (detail.name || detail.original_name || '')
+                : (detail.title || detail.original_title || '');
+              if (!localizedTitle) return null;
+              return { key: `${item.mediaType}-${item.id}`, localizedTitle };
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        results.forEach((result) => {
+          if (!result) return;
+          updates.set(result.key, result.localizedTitle);
+        });
+      }
+
+      if (cancelled || updates.size === 0) return;
+
+      setLibrary((prev) => {
+        let changed = false;
+        const next = prev.map((item) => {
+          const key = `${item.mediaType}-${item.id}`;
+          const localizedTitle = updates.get(key);
+          if (!localizedTitle) return item;
+
+          const localizedField = getLocalizedField(item);
+          const baseField = getBaseField(item);
+          const currentLocalizedValue = String(item?.[localizedField] || '').trim();
+          const currentBaseValue = String(item?.[baseField] || '').trim();
+
+          if (currentLocalizedValue === localizedTitle && currentBaseValue === localizedTitle) return item;
+          changed = true;
+          return {
+            ...item,
+            [localizedField]: localizedTitle,
+            [baseField]: localizedTitle,
+          };
+        });
+
+        return changed ? next : prev;
+      });
+    };
+
+    hydrateLocalizedLibraryTitles();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [library, lang, TMDB_LANG, setLibrary]);
+
   const signIn = useCallback(async (email, password) => {
     if (!supabase) return;
     setAuthBusy(true);
@@ -970,6 +1054,7 @@ export default function App() {
           shelf={shelf} setShelf={setShelf}
           sortBy={sortBy} setSortBy={setSortBy}
           MOVIE_STATUSES={MOVIE_STATUSES} TV_STATUSES={TV_STATUSES}
+          lang={lang}
           t={t}
           onCardClick={onCardClick}
           openQuickActions={openQuickActions}
