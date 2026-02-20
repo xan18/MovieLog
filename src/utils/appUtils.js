@@ -1,5 +1,6 @@
 export const RATINGS = [1,2,3,4,5,6,7,8,9,10];
-export const YEARS = Array.from({ length: 60 }, (_, i) => 2026 - i);
+const CURRENT_YEAR = new Date().getFullYear();
+export const YEARS = Array.from({ length: 60 }, (_, i) => CURRENT_YEAR - i);
 
 export const uniqSort = (arr) => Array.from(new Set(arr)).sort((a, b) => a - b);
 

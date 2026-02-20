@@ -10,12 +10,13 @@ export default function CatalogView({
   query, setQuery,
   selectedGenre, setSelectedGenre,
   selectedYear, setSelectedYear,
-  selectedDecade, setSelectedDecade,
   selectedReleaseFilter, setSelectedReleaseFilter,
   catalogSort, setCatalogSort,
   genres,
   catalogItems,
   page, setPage,
+  totalPages,
+  hasMore,
   catalogError,
   isCatalogLoading,
   CATALOG_SORT_OPTIONS,
@@ -67,7 +68,6 @@ export default function CatalogView({
     setQuery('');
     setSelectedGenre('');
     setSelectedYear('');
-    setSelectedDecade('');
     setSelectedReleaseFilter('all');
     setCatalogSort('popularity.desc');
     setPage(1);
@@ -115,7 +115,7 @@ export default function CatalogView({
           <CustomSelect
             value={selectedYear}
             options={yearOptions}
-            onChange={(nextValue) => { setSelectedYear(nextValue); setSelectedDecade(''); setPage(1); }}
+            onChange={(nextValue) => { setSelectedYear(nextValue); setPage(1); }}
             ariaLabel={t.allYears}
           />
           <CustomSelect
@@ -218,10 +218,10 @@ export default function CatalogView({
         </div>
       )}
 
-      {catalogItems.length > 0 && (
+      {catalogItems.length > 0 && hasMore && (
         <button
           onClick={() => setPage(p => p + 1)}
-          disabled={isCatalogLoading}
+          disabled={isCatalogLoading || !hasMore || page >= totalPages}
           className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-black text-xs uppercase tracking-widest transition-all disabled:opacity-55 disabled:cursor-not-allowed"
         >
           {isCatalogLoading ? (t.loading || t.loadMore) : t.loadMore}

@@ -1,10 +1,15 @@
-﻿import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { RatingModal } from './components/ui.jsx';
 import { useDebouncedStorageState } from './hooks/useDebouncedStorageState.js';
 import { useAppSettings } from './hooks/useAppSettings.js';
 import { useCatalog } from './hooks/useCatalog.js';
 import { useLibrary } from './hooks/useLibrary.js';
-import { tmdbUrl } from './services/tmdb.js';
+import { useAuthSession } from './hooks/useAuthSession.js';
+import { useCloudLibrarySync } from './hooks/useCloudLibrarySync.js';
+import { useUserRoles } from './hooks/useUserRoles.js';
+import { useTmdbDetailsApi } from './hooks/useTmdbDetailsApi.js';
+import { useModalHistory } from './hooks/useModalHistory.js';
+import { useStatsSelectors } from './hooks/useStatsSelectors.js';
 import { isSupabaseConfigured, supabase } from './services/supabase.js';
 import { getMovieStatuses, getTvStatuses, getStatusBadgeConfig, getTvShowStatusMap, getCrewRoleMap } from './utils/statusConfig.js';
 import { isReleasedItem } from './utils/releaseUtils.js';
@@ -22,12 +27,7 @@ import DetailsModal from './components/modals/DetailsModal.jsx';
 import QuickActionsMenu from './components/modals/QuickActionsMenu.jsx';
 import PersonModal from './components/modals/PersonModal.jsx';
 
-const ADMIN_EMAILS = new Set([
-  'umar18main@gmail.com',
-  'lagerfeed050@gmail.com',
-]);
-
-/* в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ Main App в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+/* Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Main App Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ */
 export default function App() {
   const {
     theme, setTheme,
@@ -54,14 +54,7 @@ export default function App() {
     debounceMs: 500,
     normalize: sanitizeLibraryData,
   });
-  const [authReady, setAuthReady] = useState(!isSupabaseConfigured);
-  const [session, setSession] = useState(null);
-  const [authMode, setAuthMode] = useState('signin');
-  const [authBusy, setAuthBusy] = useState(false);
-  const [authError, setAuthError] = useState('');
-  const [authNotice, setAuthNotice] = useState('');
-  const [cloudReady, setCloudReady] = useState(false);
-  const [cloudSyncError, setCloudSyncError] = useState('');
+  const [globalError, setGlobalError] = useState('');
 
   // Navigation & UI state
   const [activeTab, setActiveTab] = useState(startTab);
@@ -88,14 +81,58 @@ export default function App() {
   const [addPulseId, setAddPulseId] = useState(null);
 
   const selectedItemRef = useRef(selectedItem);
-  selectedItemRef.current = selectedItem;
-  const skipNextCloudSyncRef = useRef(false);
-  const lastCloudSyncRef = useRef('');
-  const modalDepthRef = useRef(0);
-  const prevModalDepthRef = useRef(0);
-  const modalHistoryDepthRef = useRef(0);
-  const popstateCloseCountRef = useRef(0);
-  const programmaticBackCountRef = useRef(0);
+  useEffect(() => {
+    selectedItemRef.current = selectedItem;
+  }, [selectedItem]);
+
+  const handleSignedOut = useCallback(() => {
+    setLibrary([]);
+    setGlobalError('');
+  }, [setLibrary]);
+
+  const {
+    authReady,
+    session,
+    authMode,
+    setAuthMode,
+    authBusy,
+    authError,
+    authNotice,
+    signIn,
+    signUp,
+    signOut,
+  } = useAuthSession({
+    supabaseClient: supabase,
+    isConfigured: isSupabaseConfigured,
+    authCheckEmailNotice: t.authCheckEmail,
+    onSignedOut: handleSignedOut,
+  });
+
+  const currentUserId = session?.user?.id || null;
+  const { cloudSyncError } = useCloudLibrarySync({
+    enabled: isSupabaseConfigured && Boolean(supabase),
+    supabaseClient: supabase,
+    currentUserId,
+    library,
+    setLibrary,
+    syncErrorFallback: t.authCloudSyncError,
+  });
+
+  const {
+    rolesReady,
+    rolesError,
+    canAuthorMode,
+  } = useUserRoles({
+    currentUserId,
+    supabaseClient: supabase,
+    enabled: isSupabaseConfigured && Boolean(supabase),
+  });
+
+  const isAuthor = canAuthorMode && authorModeEnabled;
+
+  const onApiError = useCallback((message) => {
+    setGlobalError(message || t.networkError);
+  }, [t.networkError]);
 
   // Hooks
   const catalog = useCatalog({ lang, t, persistCatalogFilters });
@@ -105,286 +142,29 @@ export default function App() {
     setSeasonRating,
     removeFromLibrary, handleEpisodeClick, handleSeasonToggle,
   } = useLibrary({ library, setLibrary, setSelectedItem, selectedItemRef });
-
-  const currentUserId = session?.user?.id || null;
-  const currentUserEmail = (session?.user?.email || '').toLowerCase();
-  const isAdmin = ADMIN_EMAILS.has(currentUserEmail);
-  const isAuthor = isAdmin && authorModeEnabled;
-
-  useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) return;
-
-    let active = true;
-
-    const initSession = async () => {
-      const { data, error } = await supabase.auth.getSession();
-      if (!active) return;
-      if (error) setAuthError(error.message);
-      setSession(data?.session || null);
-      setAuthReady(true);
-    };
-
-    initSession();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
-      setSession(nextSession || null);
-      setAuthError('');
-      setAuthNotice('');
-      setCloudSyncError('');
-      setCloudReady(false);
-      if (!nextSession && event === 'SIGNED_OUT') {
-        setLibrary([]);
-        lastCloudSyncRef.current = '';
-      }
-    });
-
-    return () => {
-      active = false;
-      subscription.unsubscribe();
-    };
-  }, [setLibrary]);
+  const {
+    getFullDetails,
+    getPersonDetails,
+    loadSeasonEpisodes,
+  } = useTmdbDetailsApi({
+    library,
+    setLibrary,
+    setSelectedItem,
+    setSelectedPerson,
+    setSeasonEpisodes,
+    seasonEpisodes,
+    setLoadingSeason,
+    TMDB_LANG,
+    networkErrorMessage: t.networkError,
+    onError: onApiError,
+  });
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase || !currentUserId) return;
+    if (!rolesError) return;
+    setGlobalError(rolesError);
+  }, [rolesError]);
 
-    let cancelled = false;
-    setCloudReady(false);
-    setCloudSyncError('');
-
-    const loadCloudLibrary = async () => {
-      const { data, error } = await supabase
-        .from('library_items')
-        .select('payload')
-        .eq('user_id', currentUserId);
-
-      if (cancelled) return;
-      if (error) {
-        setCloudSyncError(error.message);
-        setCloudReady(true);
-        return;
-      }
-
-      const remoteLibrary = sanitizeLibraryData((data || []).map((row) => row.payload));
-      if (remoteLibrary.length > 0) {
-        skipNextCloudSyncRef.current = true;
-        setLibrary(remoteLibrary);
-        lastCloudSyncRef.current = JSON.stringify(remoteLibrary);
-      } else {
-        lastCloudSyncRef.current = '';
-      }
-
-      setCloudReady(true);
-    };
-
-    loadCloudLibrary();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentUserId, setLibrary]);
-
-  useEffect(() => {
-    if (!isSupabaseConfigured || !supabase || !currentUserId || !cloudReady) return;
-    if (skipNextCloudSyncRef.current) {
-      skipNextCloudSyncRef.current = false;
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      const fingerprint = JSON.stringify(library);
-      if (fingerprint === lastCloudSyncRef.current) return;
-
-      try {
-        setCloudSyncError('');
-
-        if (library.length === 0) {
-          const { error } = await supabase
-            .from('library_items')
-            .delete()
-            .eq('user_id', currentUserId);
-
-          if (error) throw error;
-          lastCloudSyncRef.current = fingerprint;
-          return;
-        }
-
-        const rows = library.map((item) => ({
-          user_id: currentUserId,
-          media_type: item.mediaType,
-          tmdb_id: item.id,
-          payload: item,
-        }));
-
-        const { error: upsertError } = await supabase
-          .from('library_items')
-          .upsert(rows, { onConflict: 'user_id,media_type,tmdb_id' });
-
-        if (upsertError) throw upsertError;
-
-        const { data: existingRows, error: existingError } = await supabase
-          .from('library_items')
-          .select('media_type,tmdb_id')
-          .eq('user_id', currentUserId);
-
-        if (existingError) throw existingError;
-
-        const currentIds = {
-          movie: new Set(),
-          tv: new Set(),
-        };
-
-        library.forEach((item) => {
-          const type = item.mediaType === 'tv' ? 'tv' : 'movie';
-          currentIds[type].add(Number(item.id));
-        });
-
-        const stale = { movie: [], tv: [] };
-
-        (existingRows || []).forEach((row) => {
-          const type = row.media_type === 'tv' ? 'tv' : 'movie';
-          const id = Number(row.tmdb_id);
-          if (!currentIds[type].has(id)) stale[type].push(id);
-        });
-
-        for (const mediaType of ['movie', 'tv']) {
-          if (!stale[mediaType].length) continue;
-          const { error: deleteError } = await supabase
-            .from('library_items')
-            .delete()
-            .eq('user_id', currentUserId)
-            .eq('media_type', mediaType)
-            .in('tmdb_id', stale[mediaType]);
-          if (deleteError) throw deleteError;
-        }
-
-        lastCloudSyncRef.current = fingerprint;
-      } catch (err) {
-        setCloudSyncError(err?.message || t.authCloudSyncError);
-      }
-    }, 700);
-
-    return () => clearTimeout(timer);
-  }, [cloudReady, currentUserId, library, t.authCloudSyncError]);
-
-  useEffect(() => {
-    if (!Array.isArray(library) || library.length === 0) return;
-
-    const localeKey = lang === 'ru' ? 'ru' : 'en';
-    const getLocalizedField = (item) => (
-      item.mediaType === 'tv'
-        ? (localeKey === 'ru' ? 'name_ru' : 'name_en')
-        : (localeKey === 'ru' ? 'title_ru' : 'title_en')
-    );
-    const getBaseField = (item) => (item.mediaType === 'tv' ? 'name' : 'title');
-
-    const itemsToFetch = library.filter((item) => {
-      const localizedField = getLocalizedField(item);
-      return !String(item?.[localizedField] || '').trim();
-    });
-
-    if (itemsToFetch.length === 0) return;
-
-    let cancelled = false;
-
-    const hydrateLocalizedLibraryTitles = async () => {
-      const updates = new Map();
-      const chunkSize = 6;
-
-      for (let index = 0; index < itemsToFetch.length; index += chunkSize) {
-        if (cancelled) return;
-        const chunk = itemsToFetch.slice(index, index + chunkSize);
-        const results = await Promise.all(
-          chunk.map(async (item) => {
-            try {
-              const response = await fetch(tmdbUrl(`/${item.mediaType}/${item.id}`, { language: TMDB_LANG }));
-              if (!response.ok) return null;
-              const detail = await response.json();
-              const localizedTitle = item.mediaType === 'tv'
-                ? (detail.name || detail.original_name || '')
-                : (detail.title || detail.original_title || '');
-              if (!localizedTitle) return null;
-              return { key: `${item.mediaType}-${item.id}`, localizedTitle };
-            } catch {
-              return null;
-            }
-          })
-        );
-
-        results.forEach((result) => {
-          if (!result) return;
-          updates.set(result.key, result.localizedTitle);
-        });
-      }
-
-      if (cancelled || updates.size === 0) return;
-
-      setLibrary((prev) => {
-        let changed = false;
-        const next = prev.map((item) => {
-          const key = `${item.mediaType}-${item.id}`;
-          const localizedTitle = updates.get(key);
-          if (!localizedTitle) return item;
-
-          const localizedField = getLocalizedField(item);
-          const baseField = getBaseField(item);
-          const currentLocalizedValue = String(item?.[localizedField] || '').trim();
-          const currentBaseValue = String(item?.[baseField] || '').trim();
-
-          if (currentLocalizedValue === localizedTitle && currentBaseValue === localizedTitle) return item;
-          changed = true;
-          return {
-            ...item,
-            [localizedField]: localizedTitle,
-            [baseField]: localizedTitle,
-          };
-        });
-
-        return changed ? next : prev;
-      });
-    };
-
-    hydrateLocalizedLibraryTitles();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [library, lang, TMDB_LANG, setLibrary]);
-
-  const signIn = useCallback(async (email, password) => {
-    if (!supabase) return;
-    setAuthBusy(true);
-    setAuthError('');
-    setAuthNotice('');
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setAuthError(error.message);
-    setAuthBusy(false);
-  }, []);
-
-  const signUp = useCallback(async (email, password) => {
-    if (!supabase) return;
-    setAuthBusy(true);
-    setAuthError('');
-    setAuthNotice('');
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { emailRedirectTo: window.location.origin },
-    });
-    if (error) {
-      setAuthError(error.message);
-    } else if (!data?.session) {
-      setAuthNotice(t.authCheckEmail);
-    }
-    setAuthBusy(false);
-  }, [t.authCheckEmail]);
-
-  const signOut = useCallback(async () => {
-    if (!supabase) return;
-    const { error } = await supabase.auth.signOut();
-    if (error) setAuthError(error.message);
-  }, []);
-
-  // в”Ђв”Ђ Close modals with animation в”Ђв”Ђ
+  // Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Close modals with animation Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ
   const closeDetails = useCallback(() => {
     setClosingDetails(true);
     setTimeout(() => { setSelectedItem(null); setClosingDetails(false); }, 220);
@@ -450,75 +230,20 @@ export default function App() {
     trailerId,
   ]);
 
-  // в”Ђв”Ђ Scroll to top on tab switch в”Ђв”Ђ
+  // Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Scroll to top on tab switch Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [activeTab]);
 
-  // Keep browser back stack in sync with opened modal layers.
-  useEffect(() => {
-    const prevDepth = prevModalDepthRef.current;
+  useModalHistory({ modalDepth, closeTopModal });
 
-    if (modalDepth > prevDepth) {
-      const delta = modalDepth - prevDepth;
-      for (let i = 0; i < delta; i += 1) {
-        const nextDepth = modalHistoryDepthRef.current + 1;
-        window.history.pushState(
-          { ...(window.history.state || {}), __movielogModal: true, __movielogModalDepth: nextDepth },
-          ''
-        );
-        modalHistoryDepthRef.current = nextDepth;
-      }
-    } else if (modalDepth < prevDepth) {
-      let delta = prevDepth - modalDepth;
-
-      if (popstateCloseCountRef.current > 0) {
-        const handledByPopstate = Math.min(delta, popstateCloseCountRef.current);
-        popstateCloseCountRef.current -= handledByPopstate;
-        delta -= handledByPopstate;
-      }
-
-      const closable = Math.min(delta, modalHistoryDepthRef.current);
-      if (closable > 0) {
-        programmaticBackCountRef.current += closable;
-        modalHistoryDepthRef.current -= closable;
-        for (let i = 0; i < closable; i += 1) {
-          window.history.back();
-        }
-      }
-    }
-
-    prevModalDepthRef.current = modalDepth;
-    modalDepthRef.current = modalDepth;
-  }, [modalDepth]);
-
-  useEffect(() => {
-    const onPopState = () => {
-      if (programmaticBackCountRef.current > 0) {
-        programmaticBackCountRef.current -= 1;
-        return;
-      }
-
-      if (modalDepthRef.current < 1) return;
-
-      if (modalHistoryDepthRef.current > 0) {
-        modalHistoryDepthRef.current -= 1;
-      }
-      popstateCloseCountRef.current += 1;
-      closeTopModal(true);
-    };
-
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, [closeTopModal]);
-
-  // в”Ђв”Ђ Add pulse trigger в”Ђв”Ђ
+  // Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Add pulse trigger Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ
   const triggerAddPulse = useCallback((itemId) => {
     setAddPulseId(itemId);
     setTimeout(() => setAddPulseId(null), 450);
   }, []);
 
-  // в”Ђв”Ђ Shelf validation on libraryType change в”Ђв”Ђ
+  // Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Shelf validation on libraryType change Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ
   useEffect(() => {
     if (libraryType === 'movie') {
       if (!['planned', 'completed'].includes(shelf)) setShelf('planned');
@@ -537,7 +262,7 @@ export default function App() {
     setSortBy(librarySortDefault);
   }, [librarySortDefault]);
 
-  // в”Ђв”Ђ Sync selectedItem with library changes в”Ђв”Ђ
+  // Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Sync selectedItem with library changes Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ
   useEffect(() => {
     const si = selectedItemRef.current;
     if (!si) return;
@@ -558,7 +283,7 @@ export default function App() {
     }
   }, [library]);
 
-  // в”Ђв”Ђ Modal cleanup on selectedItem change в”Ђв”Ђ
+  // Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Modal cleanup on selectedItem change Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ
   useEffect(() => {
     if (!selectedItem) {
       if (ratingModal) setRatingModal(null);
@@ -577,7 +302,7 @@ export default function App() {
     }
   }, [movieRatingModal, ratingModal, selectedItem]);
 
-  // в”Ђв”Ђ Global keyboard & scroll listeners в”Ђв”Ђ
+  // Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Global keyboard & scroll listeners Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ
   useEffect(() => {
     const onEsc = (e) => { if (e.key === 'Escape') setQuickActions(null); };
     window.addEventListener('keydown', onEsc);
@@ -591,7 +316,7 @@ export default function App() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  /* в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ Context menu в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+  /* Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Context menu Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ */
   const openQuickActions = useCallback((item, x, y) => {
     const menuWidth = 240;
     const menuHeight = item.mediaType === 'movie' ? 240 : 330;
@@ -632,165 +357,7 @@ export default function App() {
     setQuickActions(null);
   }, [addToLibrary, getLibraryEntry, setTvStatus, triggerAddPulse]);
 
-  /* в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ API calls в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
-  const getFullDetails = useCallback(async (item) => {
-    try {
-      const [detailRes, creditsRes, videosRes, recsRes] = await Promise.all([
-        fetch(tmdbUrl(`/${item.mediaType}/${item.id}`, { language: TMDB_LANG })),
-        fetch(tmdbUrl(`/${item.mediaType}/${item.id}/credits`)),
-        fetch(tmdbUrl(`/${item.mediaType}/${item.id}/videos`, { language: TMDB_LANG })),
-        fetch(tmdbUrl(`/${item.mediaType}/${item.id}/recommendations`, { language: TMDB_LANG }))
-      ]);
-      const [detail, credits, videos, recs] = await Promise.all([
-        detailRes.json(), creditsRes.json(), videosRes.json(), recsRes.json()
-      ]);
-      const trailer = (videos?.results || []).find(v => v.type === 'Trailer' && v.site === 'YouTube');
-      const libEntry = library.find(x => x.mediaType === item.mediaType && x.id === item.id);
-
-      let collectionParts = null;
-      if (item.mediaType === 'movie' && detail.belongs_to_collection) {
-        try {
-          const colRes = await fetch(tmdbUrl(`/collection/${detail.belongs_to_collection.id}`, { language: TMDB_LANG }));
-          const colData = await colRes.json();
-          if (colData?.parts) {
-            collectionParts = {
-              name: colData.name,
-              parts: colData.parts.sort((a, b) => (a.release_date || '9999').localeCompare(b.release_date || '9999'))
-            };
-          }
-        } catch {}
-      }
-
-      let relatedShows = null;
-      if (item.mediaType === 'tv') {
-        try {
-          const keywordsRes = await fetch(tmdbUrl(`/tv/${item.id}/keywords`));
-          const keywordsData = await keywordsRes.json();
-          const rawKeywords = (keywordsData?.results || []).filter(k => k?.id && k?.name);
-
-          const genericKeywordPatterns = [
-            /^(tv|television|series|show|drama|comedy|thriller|mystery)$/i,
-            /^(miniseries|mini[- ]?series)$/i,
-            /^(based on (a )?(novel|book|comic|manga))$/i,
-            /^(female protagonist|male protagonist)$/i,
-            /^(period drama|historical fiction)$/i
-          ];
-
-          const filteredKeywords = rawKeywords
-            .filter(k => !genericKeywordPatterns.some(rx => rx.test(k.name.trim())))
-            .slice(0, 8);
-
-          const keywordLists = await Promise.all(
-            filteredKeywords.map(async (k) => {
-              try {
-                const res = await fetch(tmdbUrl(`/keyword/${k.id}/tv`, { language: TMDB_LANG, page: 1 }));
-                const data = await res.json();
-                return { keyword: k, data };
-              } catch { return null; }
-            })
-          );
-
-          const scored = new Map();
-          keywordLists.filter(Boolean).forEach(({ data }) => {
-            const total = Number(data?.total_results || 0);
-            if (total < 2 || total > 12) return;
-            (data?.results || []).forEach(show => {
-              if (!show?.id || show.id === detail.id) return;
-              const prev = scored.get(show.id) || { ...show, score: 0 };
-              prev.score += 1;
-              scored.set(show.id, prev);
-            });
-          });
-
-          const relatedOnly = Array.from(scored.values())
-            .filter(show => show.score > 0)
-            .sort((a, b) => (b.score - a.score) || (a.first_air_date || '9999').localeCompare(b.first_air_date || '9999'))
-            .slice(0, 20);
-
-          if (relatedOnly.length > 0) {
-            relatedShows = [
-              { id: detail.id, name: detail.name, poster_path: detail.poster_path, first_air_date: detail.first_air_date, vote_average: detail.vote_average },
-              ...relatedOnly
-            ];
-          }
-        } catch {}
-      }
-
-      setSelectedItem({
-        ...detail,
-        mediaType: item.mediaType,
-        credits,
-        trailer: trailer?.key || null,
-        recommendations: (recs?.results || []).slice(0, 10),
-        rating: libEntry?.rating || 0,
-        watchedEpisodes: libEntry?.watchedEpisodes || {},
-        seasonRatings: libEntry?.seasonRatings || {},
-        collectionParts,
-        relatedShows
-      });
-      setSeasonEpisodes({});
-    } catch {}
-  }, [library, TMDB_LANG]);
-
-  const getPersonDetails = useCallback(async (personId) => {
-    try {
-      const [personRes, creditsRes] = await Promise.all([
-        fetch(tmdbUrl(`/person/${personId}`, { language: TMDB_LANG })),
-        fetch(tmdbUrl(`/person/${personId}/combined_credits`, { language: TMDB_LANG }))
-      ]);
-      const [person, credits] = await Promise.all([personRes.json(), creditsRes.json()]);
-
-      const allMovies = (credits.cast || []).filter(i => i.media_type === 'movie').map(i => ({ ...i, mediaType: 'movie' }));
-      const allTvShows = (credits.cast || []).filter(i => i.media_type === 'tv').map(i => ({ ...i, mediaType: 'tv' }));
-      const directedMovies = (credits.crew || []).filter(i => i.job === 'Director' && i.media_type === 'movie').map(i => ({ ...i, mediaType: 'movie' }));
-
-      const uniqueContent = Array.from(
-        new Map([...allMovies, ...allTvShows, ...directedMovies].map(i => [i.id, i])).values()
-      ).sort((a, b) => (b.release_date || b.first_air_date || '').localeCompare(a.release_date || a.first_air_date || ''));
-
-      const moviesInLibrary = uniqueContent.filter(item => {
-        const libEntry = library.find(x => x.mediaType === item.mediaType && x.id === item.id);
-        if (libEntry) { item.rating = libEntry.rating; item.inLibrary = true; return true; }
-        return false;
-      });
-
-      const ratedInLib = moviesInLibrary.filter(m => m.rating > 0);
-      const avgRating = ratedInLib.length > 0
-        ? (ratedInLib.reduce((sum, m) => sum + m.rating, 0) / ratedInLib.length).toFixed(1)
-        : 0;
-
-      setSelectedPerson({
-        ...person, allMovies: uniqueContent, moviesInLibrary,
-        avgRating: isNaN(avgRating) ? 0 : avgRating
-      });
-    } catch (err) { console.error('Error fetching person:', err); }
-  }, [library, TMDB_LANG]);
-
-  const loadSeasonEpisodes = useCallback(async (tvId, seasonNumber) => {
-    if (seasonEpisodes[seasonNumber]) return;
-    setLoadingSeason(seasonNumber);
-    try {
-      const res = await fetch(tmdbUrl(`/tv/${tvId}/season/${seasonNumber}`, { language: TMDB_LANG }));
-      const data = await res.json();
-      const eps = data.episodes || [];
-      setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: eps }));
-
-      const runtimeMap = {};
-      eps.forEach(ep => { if (ep.runtime > 0) runtimeMap[ep.episode_number] = ep.runtime; });
-      if (Object.keys(runtimeMap).length > 0) {
-        setLibrary(prev => prev.map(x => {
-          if (x.mediaType === 'tv' && x.id === tvId) {
-            const er = { ...(x.episodeRuntimes || {}), [seasonNumber]: runtimeMap };
-            return { ...x, episodeRuntimes: er };
-          }
-          return x;
-        }));
-      }
-    } catch {}
-    setLoadingSeason(null);
-  }, [seasonEpisodes, TMDB_LANG, setLibrary]);
-
-  /* в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ Library views в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+  /* Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ API calls Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ */
   const getReleaseYear = (item) => {
     const date = item.release_date || item.first_air_date || '';
     const year = Number(date.slice(0, 4));
@@ -822,131 +389,8 @@ export default function App() {
 
   const shown = libraryType === 'movie' ? shownMovies : shownTv;
 
-  /* в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ Stats в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
-  const movieStats = useMemo(() => {
-    const movies = library.filter(x => x.mediaType === 'movie');
-    const completed = movies.filter(x => x.status === 'completed');
-    const planned = movies.filter(x => x.status === 'planned');
-    const rated = completed.filter(x => x.rating > 0);
-    const totalRuntime = completed.reduce((sum, m) => sum + (m.runtime || 0), 0);
-    const avgRating = rated.length > 0 ? (rated.reduce((s, m) => s + m.rating, 0) / rated.length).toFixed(1) : 0;
-
-    const byYear = {}, byGenre = {}, ratingDist = {}, byDecade = {};
-    completed.forEach(m => {
-      const y = m.release_date ? new Date(m.release_date).getFullYear() : 'Unknown';
-      byYear[y] = (byYear[y] || 0) + 1;
-      (Array.isArray(m.genres) ? m.genres : []).forEach(g => {
-        if (!g?.name) return;
-        byGenre[g.name] = (byGenre[g.name] || 0) + 1;
-      });
-      if (m.release_date) {
-        const decade = Math.floor(new Date(m.release_date).getFullYear() / 10) * 10;
-        byDecade[decade] = (byDecade[decade] || 0) + 1;
-      }
-    });
-    rated.forEach(m => { ratingDist[m.rating] = (ratingDist[m.rating] || 0) + 1; });
-
-    const topRated = [...rated].sort((a, b) => b.rating - a.rating).slice(0, 5);
-    const favDecade = Object.entries(byDecade).sort(([,a],[,b]) => b - a)[0];
-
-    return {
-      total: movies.length, completed: completed.length, planned: planned.length,
-      rated: rated.length, totalRuntime, avgRating, byYear, byGenre, ratingDist,
-      topRated, favDecade: favDecade ? `${favDecade[0]}-е` : null
-    };
-  }, [library]);
-
-  const tvStats = useMemo(() => {
-    const shows = library.filter(x => x.mediaType === 'tv');
-    const completed = shows.filter(x => x.status === 'completed');
-    const watching = shows.filter(x => x.status === 'watching');
-    const planned = shows.filter(x => x.status === 'planned');
-    const dropped = shows.filter(x => x.status === 'dropped');
-    const onHold = shows.filter(x => x.status === 'on_hold');
-    const ratedFromSeasons = shows
-      .map((show) => {
-        const seasonRatings = Object.values(show.seasonRatings || {}).filter((r) => Number(r) > 0);
-        if (seasonRatings.length === 0) return null;
-        const avgFromSeasons = Math.round(seasonRatings.reduce((sum, r) => sum + Number(r), 0) / seasonRatings.length);
-        return { ...show, rating: avgFromSeasons };
-      })
-      .filter(Boolean);
-    const avgRating = ratedFromSeasons.length > 0
-      ? (ratedFromSeasons.reduce((s, sh) => s + sh.rating, 0) / ratedFromSeasons.length).toFixed(1)
-      : 0;
-
-    let totalEpisodes = 0, totalSeasons = 0, totalRuntime = 0;
-    shows.forEach(sh => {
-      const w = sh.watchedEpisodes || {};
-      const er = sh.episodeRuntimes || {};
-      const fallbackRuntime = (sh.episode_run_time && sh.episode_run_time.length > 0) ? sh.episode_run_time[0] : 45;
-      Object.entries(w).forEach(([seasonNum, eps]) => {
-        const safeEpisodes = Array.isArray(eps) ? eps : [];
-        totalEpisodes += safeEpisodes.length;
-        if (safeEpisodes.length > 0) totalSeasons++;
-        const seasonRuntimes = er[seasonNum] || {};
-        safeEpisodes.forEach(epNum => { totalRuntime += seasonRuntimes[epNum] || fallbackRuntime; });
-      });
-    });
-
-    const byYear = {}, byGenre = {}, ratingDist = {};
-    completed.forEach(sh => {
-      const y = sh.first_air_date ? new Date(sh.first_air_date).getFullYear() : 'Unknown';
-      byYear[y] = (byYear[y] || 0) + 1;
-    });
-    shows.forEach(sh => {
-      (Array.isArray(sh.genres) ? sh.genres : []).forEach(g => {
-        if (!g?.name) return;
-        byGenre[g.name] = (byGenre[g.name] || 0) + 1;
-      });
-    });
-    ratedFromSeasons.forEach((show) => {
-      ratingDist[show.rating] = (ratingDist[show.rating] || 0) + 1;
-    });
-    const topRated = [...ratedFromSeasons].sort((a, b) => b.rating - a.rating).slice(0, 5);
-
-    return {
-      total: shows.length, completed: completed.length, watching: watching.length,
-      planned: planned.length, dropped: dropped.length, onHold: onHold.length,
-      rated: ratedFromSeasons.length, totalEpisodes, totalSeasons, totalRuntime,
-      avgRating, byYear, byGenre, ratingDist, topRated
-    };
-  }, [library]);
-
-  const peopleData = useMemo(() => {
-    const peopleMap = {};
-    library.forEach(item => {
-      if (!item.credits) return;
-      if (peopleView === 'directors') {
-        if (item.mediaType === 'movie') {
-          const director = item.credits.crew?.find(p => p.job === 'Director');
-          if (director) {
-            if (!peopleMap[director.id]) peopleMap[director.id] = { ...director, items: [], totalRating: 0, ratedCount: 0 };
-            peopleMap[director.id].items.push(item);
-            if (item.rating > 0) { peopleMap[director.id].totalRating += item.rating; peopleMap[director.id].ratedCount++; }
-          }
-        }
-        if (item.mediaType === 'tv' && item.created_by) {
-          item.created_by.forEach(creator => {
-            if (!peopleMap[creator.id]) peopleMap[creator.id] = { ...creator, items: [], totalRating: 0, ratedCount: 0 };
-            peopleMap[creator.id].items.push(item);
-            if (item.rating > 0) { peopleMap[creator.id].totalRating += item.rating; peopleMap[creator.id].ratedCount++; }
-          });
-        }
-      } else {
-        const cast = Array.isArray(item.credits.cast) ? item.credits.cast : [];
-        cast.slice(0, 5).forEach(actor => {
-          if (!peopleMap[actor.id]) peopleMap[actor.id] = { ...actor, items: [], totalRating: 0, ratedCount: 0 };
-          peopleMap[actor.id].items.push(item);
-          if (item.rating > 0) { peopleMap[actor.id].totalRating += item.rating; peopleMap[actor.id].ratedCount++; }
-        });
-      }
-    });
-    return Object.values(peopleMap)
-      .map(p => ({ ...p, avgRating: p.ratedCount > 0 ? (p.totalRating / p.ratedCount).toFixed(1) : 0 }))
-      .sort((a, b) => b.items.length - a.items.length || Number(b.avgRating) - Number(a.avgRating))
-      .slice(0, 20);
-  }, [library, peopleView]);
+  /* Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Stats Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ */
+  const { movieStats, tvStats, peopleData } = useStatsSelectors({ library, peopleView });
 
   if (!isSupabaseConfigured || !supabase) {
     return (
@@ -986,7 +430,17 @@ export default function App() {
     );
   }
 
-  /* в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ RENDER в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+  if (!rolesReady) {
+    return (
+      <div className="app-shell max-w-[740px] mx-auto px-4 md:px-6 pt-10 pb-12 relative">
+        <div className="glass app-panel p-7 md:p-9">
+          <p className="text-sm opacity-80">{t.loading}</p>
+        </div>
+      </div>
+    );
+  }
+
+  /* Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ RENDER Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ */
   return (
     <div className="app-shell max-w-[1180px] mx-auto px-4 md:px-6 pt-5 pb-28 md:pb-12 relative">
       {/* HEADER */}
@@ -1026,6 +480,11 @@ export default function App() {
       {cloudSyncError && (
         <div className="mb-5 rounded-xl border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm text-red-100">
           {t.authCloudSyncError}: {cloudSyncError}
+        </div>
+      )}
+      {globalError && (
+        <div className="mb-5 rounded-xl border border-amber-400/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          {globalError}
         </div>
       )}
 
@@ -1085,7 +544,7 @@ export default function App() {
           t={t}
           lang={lang}
           currentUserId={currentUserId}
-          isAdmin={isAdmin}
+          canAuthorMode={canAuthorMode}
           isAuthor={isAuthor}
           authorModeEnabled={authorModeEnabled}
           setAuthorModeEnabled={setAuthorModeEnabled}
@@ -1110,7 +569,7 @@ export default function App() {
           persistCatalogFilters={persistCatalogFilters} setPersistCatalogFilters={setPersistCatalogFilters}
           importMode={importMode} setImportMode={setImportMode}
           reducedMotion={reducedMotion} setReducedMotion={setReducedMotion}
-          isAdmin={isAdmin}
+          canAuthorMode={canAuthorMode}
           authorModeEnabled={authorModeEnabled}
           setAuthorModeEnabled={setAuthorModeEnabled}
           confirmClear={confirmClear} setConfirmClear={setConfirmClear}
@@ -1227,7 +686,7 @@ export default function App() {
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 p-4" onClick={() => setDeleteModal(null)}>
           <div className="w-full max-w-md glass app-panel-padded p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="text-center mb-6">
-              <div className="text-5xl mb-4">вљ пёЏ</div>
+              <div className="text-5xl mb-4">Р Р†РЎв„ўР’В Р С—РЎвЂР РЏ</div>
               <h3 className="text-2xl font-black mb-3">{t.deleteConfirmTitle}</h3>
               <p className="text-sm opacity-80 mb-2">{deleteModal.title}</p>
               <p className="text-xs opacity-60">{deleteModal.mediaType === 'tv' ? t.deleteConfirmTv : t.deleteConfirmMovie}</p>
@@ -1292,4 +751,5 @@ export default function App() {
     </div>
   );
 }
+
 

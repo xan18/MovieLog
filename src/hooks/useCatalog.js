@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+ï»¿import { useState, useRef, useEffect, useCallback } from 'react';
 import { useDebounce } from './useDebounce.js';
-import { tmdbUrl, tmdbFetchJson } from '../services/tmdb.js';
+import { tmdbFetchJson } from '../services/tmdb.js';
 import { isReleasedDate } from '../utils/releaseUtils.js';
 import { getCatalogSortOptions, getReleaseFilterOptions } from '../utils/uiOptions.js';
 import { CATALOG_FILTERS_KEY } from '../constants/appConstants.js';
@@ -10,13 +10,12 @@ function createDefaultProfile() {
     query: '',
     selectedGenre: '',
     selectedYear: '',
-    selectedDecade: '',
     selectedReleaseFilter: 'all',
     catalogSort: 'popularity.desc',
   };
 }
 
-function resolveCatalogSort(mediaType, sortValue) {
+export function resolveCatalogSort(mediaType, sortValue) {
   const newest = mediaType === 'movie' ? 'primary_release_date.desc' : 'first_air_date.desc';
   if (sortValue === 'primary_release_date.desc' && mediaType === 'tv') return newest;
   if (sortValue === 'first_air_date.desc' && mediaType === 'movie') return newest;
@@ -34,7 +33,6 @@ function readStoredCatalogFilters() {
       query: typeof profile?.query === 'string' ? profile.query : '',
       selectedGenre: typeof profile?.selectedGenre === 'string' ? profile.selectedGenre : '',
       selectedYear: typeof profile?.selectedYear === 'string' ? profile.selectedYear : '',
-      selectedDecade: typeof profile?.selectedDecade === 'string' ? profile.selectedDecade : '',
       selectedReleaseFilter: ['all', 'released', 'upcoming'].includes(profile?.selectedReleaseFilter)
         ? profile.selectedReleaseFilter
         : 'all',
@@ -48,7 +46,8 @@ function readStoredCatalogFilters() {
         tv: safeProfile(parsed?.profiles?.tv),
       },
     };
-  } catch {
+  } catch (error) {
+    console.warn('Failed to read saved catalog filters. Using defaults.', error);
     return { mediaType: 'movie', profiles: defaults };
   }
 }
@@ -69,7 +68,6 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
   const debouncedQuery = useDebounce(query, 300);
   const [selectedGenre, setSelectedGenre] = useState(initialStored.profiles[initialStored.mediaType].selectedGenre);
   const [selectedYear, setSelectedYear] = useState(initialStored.profiles[initialStored.mediaType].selectedYear);
-  const [selectedDecade, setSelectedDecade] = useState(initialStored.profiles[initialStored.mediaType].selectedDecade);
   const [selectedReleaseFilter, setSelectedReleaseFilter] = useState(initialStored.profiles[initialStored.mediaType].selectedReleaseFilter);
   const [catalogSort, setCatalogSort] = useState(
     resolveCatalogSort(initialStored.mediaType, initialStored.profiles[initialStored.mediaType].catalogSort)
@@ -79,6 +77,8 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
   const catalogProfilesRef = useRef(initialStored.profiles);
   const [catalogItems, setCatalogItems] = useState([]);
   const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   const [catalogError, setCatalogError] = useState(null);
   const [isCatalogLoading, setIsCatalogLoading] = useState(true);
 
@@ -95,19 +95,19 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
       setQuery(saved.query);
       setSelectedGenre(saved.selectedGenre);
       setSelectedYear(saved.selectedYear);
-      setSelectedDecade(saved.selectedDecade);
       setSelectedReleaseFilter(saved.selectedReleaseFilter);
       setCatalogSort(resolveCatalogSort(nextMediaType, saved.catalogSort));
     } else {
       setSelectedGenre('');
       setSelectedYear('');
-      setSelectedDecade('');
       setQuery('');
-      setCatalogSort(prev => resolveCatalogSort(nextMediaType, prev));
+      setCatalogSort((prev) => resolveCatalogSort(nextMediaType, prev));
     }
 
     setCatalogItems([]);
     setPage(1);
+    setTotalPages(1);
+    setHasMore(true);
   }, [mediaType, persistCatalogFilters]);
 
   useEffect(() => {
@@ -121,7 +121,6 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
       query,
       selectedGenre,
       selectedYear,
-      selectedDecade,
       selectedReleaseFilter,
       catalogSort: resolveCatalogSort(mediaType, catalogSort),
     };
@@ -130,7 +129,7 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
       profiles: catalogProfilesRef.current,
     };
     localStorage.setItem(CATALOG_FILTERS_KEY, JSON.stringify(payload));
-  }, [persistCatalogFilters, mediaType, query, selectedGenre, selectedYear, selectedDecade, selectedReleaseFilter, catalogSort]);
+  }, [persistCatalogFilters, mediaType, query, selectedGenre, selectedYear, selectedReleaseFilter, catalogSort]);
 
   // Fetch genres with cache
   useEffect(() => {
@@ -149,7 +148,12 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
         const list = Array.isArray(data?.genres) ? data.genres : [];
         genreCache.current[mediaType] = list;
         setGenres(list);
-      } catch { setGenres([]); }
+      } catch (error) {
+        if (error?.name !== 'AbortError') {
+          console.error(`Failed to load genres for ${mediaType}`, error);
+        }
+        setGenres([]);
+      }
     })();
     return () => controller.abort();
   }, [mediaType, TMDB_LANG]);
@@ -161,50 +165,44 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
     setIsCatalogLoading(true);
     (async () => {
       try {
-        let url = '';
+        let data;
         if (debouncedQuery.trim()) {
-          url = tmdbUrl(`/search/${mediaType}`, {
+          data = await tmdbFetchJson(`/search/${mediaType}`, {
             language: TMDB_LANG,
             query: debouncedQuery,
-            page
-          });
+            page,
+          }, { signal: controller.signal });
         } else {
           const params = {
             language: TMDB_LANG,
             page,
-            sort_by: catalogSort
+            sort_by: catalogSort,
           };
           if (selectedGenre) params.with_genres = selectedGenre;
           if (selectedYear) {
             if (mediaType === 'movie') params.primary_release_year = selectedYear;
             else params.first_air_date_year = selectedYear;
           }
-          if (selectedDecade) {
-            const start = `${selectedDecade}-01-01`;
-            const end = `${Number(selectedDecade) + 9}-12-31`;
-            if (mediaType === 'movie') {
-              params['primary_release_date.gte'] = start;
-              params['primary_release_date.lte'] = end;
-            } else {
-              params['first_air_date.gte'] = start;
-              params['first_air_date.lte'] = end;
-            }
-          }
-          url = tmdbUrl(`/discover/${mediaType}`, params);
+          data = await tmdbFetchJson(`/discover/${mediaType}`, params, { signal: controller.signal });
         }
-        const res = await fetch(url, { signal: controller.signal });
-        const data = await res.json();
-        const items = (data?.results || []).map(it => ({ ...it, mediaType }));
-        const filteredItems = items.filter(it => {
+
+        const items = (data?.results || []).map((it) => ({ ...it, mediaType }));
+        const filteredItems = items.filter((it) => {
           if (selectedReleaseFilter === 'all') return true;
           const date = mediaType === 'movie' ? it.release_date : it.first_air_date;
           const released = isReleasedDate(date);
           return selectedReleaseFilter === 'released' ? released : !released;
         });
-        setCatalogItems(prev => page === 1 ? filteredItems : [...prev, ...filteredItems]);
-      } catch (err) {
-        if (err?.name !== 'AbortError') {
-          setCatalogError(t.networkError || 'Îøèáêà çàãðóçêè');
+
+        const nextTotalPages = Math.max(1, Number(data?.total_pages || 1));
+        setTotalPages(nextTotalPages);
+        setHasMore(page < nextTotalPages);
+        setCatalogItems((prev) => (page === 1 ? filteredItems : [...prev, ...filteredItems]));
+      } catch (error) {
+        if (error?.name !== 'AbortError') {
+          console.error(`Failed to load ${mediaType} catalog page ${page}`, error);
+          setCatalogError(error?.message || t.networkError || 'ÐžÑˆÐ¸Ð±ÐºÐ° Ð·Ð°Ð³Ñ€ÑƒÐ·ÐºÐ¸');
+          setHasMore(false);
         }
       } finally {
         if (!controller.signal.aborted) setIsCatalogLoading(false);
@@ -213,7 +211,7 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
     return () => {
       controller.abort();
     };
-  }, [mediaType, debouncedQuery, selectedGenre, selectedYear, selectedDecade, selectedReleaseFilter, catalogSort, page, TMDB_LANG]);
+  }, [mediaType, debouncedQuery, selectedGenre, selectedYear, selectedReleaseFilter, catalogSort, page, TMDB_LANG, t.networkError]);
 
   return {
     mediaType, setMediaType,
@@ -221,12 +219,13 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
     debouncedQuery,
     selectedGenre, setSelectedGenre,
     selectedYear, setSelectedYear,
-    selectedDecade, setSelectedDecade,
     selectedReleaseFilter, setSelectedReleaseFilter,
     catalogSort, setCatalogSort,
     genres,
     catalogItems,
     page, setPage,
+    totalPages,
+    hasMore,
     catalogError,
     isCatalogLoading,
     TMDB_LANG,

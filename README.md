@@ -1,35 +1,77 @@
-# Movie.Log v27 (Project)
+﻿# MovieLog v27
 
-Это тот же **Movie.Log v27 Enhanced**, но разложенный как обычный проект (Vite + React), без «всё в одном HTML».
+MovieLog is a React + Vite app for tracking movies and TV shows.
 
-## Запуск
+## Stack
 
-1) Установи Node.js (лучше LTS)
-2) В папке проекта:
+- React 18
+- Vite 5
+- Tailwind CSS
+- Supabase (Auth + Postgres)
+- TMDB API
+
+## Requirements
+
+- Node.js 18+
+- npm 9+
+
+## Setup
+
+1. Install dependencies:
 
 ```bash
 npm install
-npm run dev
 ```
 
-Откроется адрес из консоли (обычно `http://localhost:5173`).
-
-## Сборка
+2. Create `.env` from `.env.example` and set values:
 
 ```bash
+VITE_TMDB_API_KEY=...
+VITE_SUPABASE_URL=...
+VITE_SUPABASE_ANON_KEY=...
+```
+
+3. Apply SQL in Supabase SQL Editor (in this order):
+
+- `supabase/collections_schema.sql`
+- `supabase/library_items_schema.sql`
+
+4. (Optional) Grant yourself author/admin role. See `docs/collections_setup.md`.
+
+## Scripts
+
+```bash
+npm run dev
 npm run build
 npm run preview
+npm run lint
+npm run test
+npm run typecheck
 ```
 
-## Важно
+## Supabase Notes
 
-- Tailwind подключён через CDN в `index.html`, чтобы визуал совпал 1-в-1.
-- Данные библиотеки хранятся в `localStorage` под ключом `movie_log_v27`.
+- `collections_schema.sql` creates:
+  - `app_user_roles`
+  - `curated_collections`
+  - `curated_collection_items`
+  - RLS policies based on roles (`admin`, `author`)
+- `library_items_schema.sql` creates:
+  - `library_items`
+  - unique key `(user_id, media_type, tmdb_id)`
+  - `updated_at` trigger
+  - per-user RLS policies for CRUD
 
-## Environment
+## Author Mode
 
-Create a `.env` file from `.env.example` and set:
+Frontend author mode is enabled only for users that have `author` or `admin` role in `app_user_roles`.
 
-```bash
-VITE_TMDB_API_KEY=your_tmdb_api_key_here
-```
+## Quality Gates
+
+Current CI-style checks:
+
+- `npm run build`
+- `npm audit --omit=dev`
+- `npm run lint`
+- `npm run test`
+- `npm run typecheck`

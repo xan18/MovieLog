@@ -1,38 +1,48 @@
-# Collections Setup
+﻿# Collections + Roles Setup
 
-## 1) Apply database schema
+## 1) Apply SQL migrations
 
-1. Open Supabase SQL Editor for your project.
-2. Run `supabase/collections_schema.sql`.
+Run these scripts in Supabase SQL Editor:
 
-This creates:
-- `curated_collections`
-- `curated_collection_items`
-- RLS policies where admin emails (`umar18main@gmail.com`, `lagerfeed050@gmail.com`) can manage collections, including each other's collections.
+1. `supabase/collections_schema.sql`
+2. `supabase/library_items_schema.sql`
 
-## 2) Redeploy app
+What you get:
 
-After pushing code changes, Vercel auto-deploy is enough.
-No new environment variables are required.
+- Role table: `public.app_user_roles`
+- Curated tables: `public.curated_collections`, `public.curated_collection_items`
+- Personal cloud library table: `public.library_items`
+- RLS policies for per-user library and role-based collection management
 
-## 3) Author flow
+## 2) Grant role to a user
 
-1. Sign in as one of the admin emails (`umar18main@gmail.com` or `lagerfeed050@gmail.com`).
-2. Open tab `Collections`.
-3. Create collection:
-   - RU/EN title
-   - RU/EN description
-   - visibility: `Public` or `Private`
-4. Add movie/TV entries by search.
-5. Reorder or remove entries in the same tab.
-6. Admins can edit/delete collections created by another admin.
+Use SQL Editor (service role context) and replace the email:
 
-## 4) User flow
+```sql
+insert into public.app_user_roles (user_id, role_name)
+select id, 'author'
+from auth.users
+where lower(email) = lower('user@example.com')
+on conflict (user_id, role_name) do nothing;
+```
 
-Regular users can:
-- open the `Collections` tab
-- view public collections
-- open title details
-- add titles to personal library
+Available roles:
 
-Regular users cannot create/edit/delete collections.
+- `author`: can manage own collections
+- `admin`: can manage all collections
+
+To grant admin:
+
+```sql
+insert into public.app_user_roles (user_id, role_name)
+select id, 'admin'
+from auth.users
+where lower(email) = lower('user@example.com')
+on conflict (user_id, role_name) do nothing;
+```
+
+## 3) Frontend behavior
+
+- Any signed-in user can read public collections.
+- A user with `author` or `admin` role can enable Author Mode in UI and create/edit collections.
+- Cloud library sync reads/writes only current user's rows in `library_items`.

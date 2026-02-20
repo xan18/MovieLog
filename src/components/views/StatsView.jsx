@@ -135,7 +135,7 @@ export default function StatsView({
   return (
     <div className="view-stack">
       <SegmentedControl
-        items={[{ id: 'statistics', label: `\u{1F4CA} Аналитика` }, { id: 'people', label: `\u{1F465} ${t.people}` }]}
+        items={[{ id: 'statistics', label: `\u{1F4CA} ${t.statistics}` }, { id: 'people', label: `\u{1F465} ${t.people}` }]}
         activeId={statsView}
         onChange={setStatsView}
       />

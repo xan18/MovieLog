@@ -3,6 +3,65 @@
 
 create extension if not exists pgcrypto;
 
+create table if not exists public.app_user_roles (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  role_name text not null check (role_name in ('admin', 'author')),
+  created_at timestamptz not null default now(),
+  created_by uuid references auth.users(id) on delete set null,
+  unique (user_id, role_name)
+);
+
+create index if not exists app_user_roles_user_idx
+  on public.app_user_roles (user_id);
+
+create index if not exists app_user_roles_role_idx
+  on public.app_user_roles (role_name, user_id);
+
+create or replace function public.user_has_role(target_role text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.app_user_roles r
+    where r.user_id = auth.uid()
+      and r.role_name = target_role
+  );
+$$;
+
+create or replace function public.user_has_any_role(target_roles text[])
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.app_user_roles r
+    where r.user_id = auth.uid()
+      and r.role_name = any(target_roles)
+  );
+$$;
+
+create or replace function public.can_manage_collection(owner_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.user_has_role('admin')
+    or (
+      owner_id = auth.uid()
+      and public.user_has_any_role(array['admin', 'author']::text[])
+    );
+$$;
+
 create table if not exists public.curated_collections (
   id uuid primary key default gen_random_uuid(),
   owner_user_id uuid not null references auth.users(id) on delete cascade,
@@ -48,8 +107,15 @@ before update on public.curated_collections
 for each row
 execute function public.set_curated_collections_updated_at();
 
+alter table public.app_user_roles enable row level security;
 alter table public.curated_collections enable row level security;
 alter table public.curated_collection_items enable row level security;
+
+drop policy if exists "Users can read own roles" on public.app_user_roles;
+create policy "Users can read own roles"
+on public.app_user_roles
+for select
+using (user_id = auth.uid());
 
 drop policy if exists "Collections visible to owner or public" on public.curated_collections;
 create policy "Collections visible to owner or public"
@@ -58,7 +124,7 @@ for select
 using (
   visibility = 'public'
   or owner_user_id = auth.uid()
-  or lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
+  or public.user_has_role('admin')
 );
 
 drop policy if exists "Author can insert collections" on public.curated_collections;
@@ -67,7 +133,7 @@ on public.curated_collections
 for insert
 with check (
   owner_user_id = auth.uid()
-  and lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
+  and public.user_has_any_role(array['admin', 'author']::text[])
 );
 
 drop policy if exists "Author can update own collections" on public.curated_collections;
@@ -75,10 +141,10 @@ create policy "Author can update own collections"
 on public.curated_collections
 for update
 using (
-  lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
+  public.can_manage_collection(owner_user_id)
 )
 with check (
-  lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
+  public.can_manage_collection(owner_user_id)
 );
 
 drop policy if exists "Author can delete own collections" on public.curated_collections;
@@ -86,7 +152,7 @@ create policy "Author can delete own collections"
 on public.curated_collections
 for delete
 using (
-  lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
+  public.can_manage_collection(owner_user_id)
 );
 
 drop policy if exists "Collection items visible by parent access" on public.curated_collection_items;
@@ -101,7 +167,7 @@ using (
       and (
         c.visibility = 'public'
         or c.owner_user_id = auth.uid()
-        or lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
+        or public.user_has_role('admin')
       )
   )
 );
@@ -115,7 +181,7 @@ with check (
     select 1
     from public.curated_collections c
     where c.id = collection_id
-      and lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
+      and public.can_manage_collection(c.owner_user_id)
   )
 );
 
@@ -128,7 +194,7 @@ using (
     select 1
     from public.curated_collections c
     where c.id = collection_id
-      and lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
+      and public.can_manage_collection(c.owner_user_id)
   )
 )
 with check (
@@ -136,7 +202,7 @@ with check (
     select 1
     from public.curated_collections c
     where c.id = collection_id
-      and lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
+      and public.can_manage_collection(c.owner_user_id)
   )
 );
 
@@ -149,9 +215,13 @@ using (
     select 1
     from public.curated_collections c
     where c.id = collection_id
-      and lower(coalesce(auth.jwt() ->> 'email', '')) in ('umar18main@gmail.com', 'lagerfeed050@gmail.com')
+      and public.can_manage_collection(c.owner_user_id)
   )
 );
 
+grant select on public.app_user_roles to authenticated;
+grant select, insert, update, delete on public.app_user_roles to service_role;
 grant select, insert, update, delete on public.curated_collections to authenticated;
 grant select, insert, update, delete on public.curated_collection_items to authenticated;
+grant select, insert, update, delete on public.curated_collections to service_role;
+grant select, insert, update, delete on public.curated_collection_items to service_role;

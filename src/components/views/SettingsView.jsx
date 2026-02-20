@@ -14,7 +14,7 @@ export default function SettingsView({
   persistCatalogFilters, setPersistCatalogFilters,
   importMode, setImportMode,
   reducedMotion, setReducedMotion,
-  isAdmin,
+  canAuthorMode,
   authorModeEnabled, setAuthorModeEnabled,
   confirmClear, setConfirmClear,
 }) {
@@ -188,7 +188,7 @@ export default function SettingsView({
               <span className="settings-toggle-dot" />
             </span>
           </button>
-          {isAdmin && (
+          {canAuthorMode && (
             <button
               type="button"
               onClick={() => setAuthorModeEnabled(prev => !prev)}

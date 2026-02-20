@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { CustomSelect, LazyImg } from '../ui.jsx';
 import { IMG_500 } from '../../constants/appConstants.js';
 import { getYear } from '../../utils/appUtils.js';
-import { tmdbUrl } from '../../services/tmdb.js';
+import { tmdbFetchJson } from '../../services/tmdb.js';
 import { supabase } from '../../services/supabase.js';
 import { useDebounce } from '../../hooks/useDebounce.js';
 import { useQuickActionGesture } from '../../hooks/useQuickActionGesture.js';
@@ -33,7 +33,7 @@ export default function CollectionsView({
   t,
   lang,
   currentUserId,
-  isAdmin,
+  canAuthorMode,
   isAuthor,
   authorModeEnabled,
   setAuthorModeEnabled,
@@ -164,8 +164,7 @@ export default function CollectionsView({
 
     const detailedItems = await Promise.all(rows.map(async (row) => {
       try {
-        const response = await fetch(tmdbUrl(`/${row.media_type}/${row.tmdb_id}`, { language: TMDB_LANG }));
-        const detail = await response.json();
+        const detail = await tmdbFetchJson(`/${row.media_type}/${row.tmdb_id}`, { language: TMDB_LANG });
         if (!detail?.id) throw new Error('Invalid TMDB payload');
         return {
           ...detail,
@@ -173,7 +172,8 @@ export default function CollectionsView({
           _collectionItemId: row.id,
           _sortOrder: row.sort_order || 0,
         };
-      } catch {
+      } catch (error) {
+        console.warn(`Failed to load collection item details for ${row.media_type}:${row.tmdb_id}`, error);
         return {
           id: Number(row.tmdb_id),
           mediaType: row.media_type,
@@ -403,19 +403,19 @@ export default function CollectionsView({
       setSearchLoading(true);
       setSearchError('');
       try {
-        const response = await fetch(tmdbUrl(`/search/${searchMediaType}`, {
+        const payload = await tmdbFetchJson(`/search/${searchMediaType}`, {
           language: TMDB_LANG,
           query: debouncedSearchQuery,
           page: 1,
-        }));
-        const payload = await response.json();
+        });
         if (cancelled) return;
         const items = Array.isArray(payload?.results)
           ? payload.results.slice(0, 12).map((item) => ({ ...item, mediaType: searchMediaType }))
           : [];
         setSearchResults(items);
-      } catch {
+      } catch (error) {
         if (cancelled) return;
+        console.error(`Collections search failed for ${searchMediaType}`, error);
         setSearchError(t.networkError);
         setSearchResults([]);
       } finally {
@@ -694,7 +694,7 @@ export default function CollectionsView({
           <h2 className="app-page-title">{t.collections.toUpperCase()}</h2>
           <p className="text-xs opacity-55 mt-2">{t.collectionsSubtitle}</p>
         </div>
-        {isAdmin && (
+        {canAuthorMode && (
           <div className="flex items-center gap-2 mt-2">
             <span className="tag h-fit">{t.collectionsAuthorMode}</span>
             <button

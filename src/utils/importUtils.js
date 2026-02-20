@@ -4,10 +4,16 @@ const decodeText = (buffer) => {
     () => new TextDecoder('utf-16le', { fatal: true }).decode(buffer),
     () => new TextDecoder('windows-1251', { fatal: true }).decode(buffer),
   ];
+  let lastError = null;
   for (const read of decoders) {
     try {
       return read();
-    } catch {}
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (lastError) {
+    console.warn('Falling back to non-fatal UTF-8 decoding for import file.', lastError);
   }
   return new TextDecoder('utf-8').decode(buffer);
 };
