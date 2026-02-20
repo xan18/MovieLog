@@ -8,7 +8,7 @@
 This creates:
 - `curated_collections`
 - `curated_collection_items`
-- RLS policies where only `umar18main@gmail.com` can manage collections.
+- RLS policies where admin emails (`umar18main@gmail.com`, `lagerfeed050@gmail.com`) can manage collections, including each other's collections.
 
 ## 2) Redeploy app
 
@@ -17,7 +17,7 @@ No new environment variables are required.
 
 ## 3) Author flow
 
-1. Sign in as `umar18main@gmail.com`.
+1. Sign in as one of the admin emails (`umar18main@gmail.com` or `lagerfeed050@gmail.com`).
 2. Open tab `Collections`.
 3. Create collection:
    - RU/EN title
@@ -25,6 +25,7 @@ No new environment variables are required.
    - visibility: `Public` or `Private`
 4. Add movie/TV entries by search.
 5. Reorder or remove entries in the same tab.
+6. Admins can edit/delete collections created by another admin.
 
 ## 4) User flow
 

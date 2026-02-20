@@ -97,7 +97,6 @@ export default function CollectionsView({
   const canManageSelected = Boolean(
     isAuthor
     && selectedCollection
-    && selectedCollection.owner_user_id === currentUserId
   );
   const collectionItemKeySet = useMemo(
     () => new Set(collectionRows.map((row) => `${row.media_type}-${Number(row.tmdb_id)}`)),
