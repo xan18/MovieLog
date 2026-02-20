@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CustomSelect, LazyImg } from '../ui.jsx';
+import { CustomSelect, LazyImg, SegmentedControl } from '../ui.jsx';
 import { IMG_500 } from '../../constants/appConstants.js';
 import { getYear } from '../../utils/appUtils.js';
 import { tmdbFetchJson } from '../../services/tmdb.js';
 import { supabase } from '../../services/supabase.js';
 import { useDebounce } from '../../hooks/useDebounce.js';
 import { useQuickActionGesture } from '../../hooks/useQuickActionGesture.js';
+import { usePersonalRecommendations } from '../../hooks/usePersonalRecommendations.js';
 
 const createEmptyDraft = () => ({
   title_ru: '',
@@ -29,10 +30,19 @@ const getLocalized = (lang, ruValue, enValue) => {
   return (enValue || ruValue || '').trim();
 };
 
+const interpolate = (template, values = {}) => {
+  let result = String(template || '');
+  Object.entries(values).forEach(([key, value]) => {
+    result = result.replaceAll(`{${key}}`, String(value ?? ''));
+  });
+  return result;
+};
+
 export default function CollectionsView({
   t,
   lang,
   currentUserId,
+  library,
   canAuthorMode,
   isAuthor,
   authorModeEnabled,
@@ -68,6 +78,7 @@ export default function CollectionsView({
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState('');
   const [searchResults, setSearchResults] = useState([]);
+  const [collectionsSection, setCollectionsSection] = useState('curated');
   const debouncedSearchQuery = useDebounce(searchQuery.trim(), 350);
   const collectionModalCloseTimerRef = useRef(null);
   const collectionSearchInputRef = useRef(null);
@@ -87,6 +98,21 @@ export default function CollectionsView({
     onCardClick(item);
   };
 
+  const {
+    seedCount: recommendationSeedCount,
+    visibleRecommendations,
+    loading: recommendationsLoading,
+    error: recommendationsError,
+    hasMore: recommendationsHasMore,
+    showMore: showMoreRecommendations,
+    refresh: refreshRecommendations,
+  } = usePersonalRecommendations({
+    library,
+    lang,
+    currentUserId,
+    enabled: collectionsSection === 'forYou',
+  });
+
   const visibilityOptions = useMemo(() => ([
     { value: 'public', label: t.collectionsVisibilityPublic },
     { value: 'private', label: t.collectionsVisibilityPrivate },
@@ -96,6 +122,11 @@ export default function CollectionsView({
     { value: 'movie', label: t.movies },
     { value: 'tv', label: t.tvShows },
   ]), [t.movies, t.tvShows]);
+
+  const collectionsSections = useMemo(() => ([
+    { id: 'curated', label: t.collections },
+    { id: 'forYou', label: t.collectionsForYouTab },
+  ]), [t.collections, t.collectionsForYouTab]);
 
   const selectedCollection = useMemo(
     () => collections.find((collection) => collection.id === selectedCollectionId) || null,
@@ -111,6 +142,22 @@ export default function CollectionsView({
     () => new Set(collectionRows.map((row) => `${row.media_type}-${Number(row.tmdb_id)}`)),
     [collectionRows]
   );
+
+  const getRecommendationReasonText = useCallback((item) => {
+    const reasonSeeds = Array.isArray(item?.recommendationReasonSeeds)
+      ? item.recommendationReasonSeeds.filter((seed) => seed?.title)
+      : [];
+
+    if (reasonSeeds.length === 0) return '';
+    if (reasonSeeds.length === 1) {
+      return interpolate(t.collectionsForYouBecauseSingle, { title: reasonSeeds[0].title });
+    }
+
+    return interpolate(t.collectionsForYouBecauseMany, {
+      title1: reasonSeeds[0].title,
+      title2: reasonSeeds[1].title,
+    });
+  }, [t.collectionsForYouBecauseMany, t.collectionsForYouBecauseSingle]);
 
   const loadCollections = useCallback(async () => {
     if (!supabase || !currentUserId) return;
@@ -287,6 +334,13 @@ export default function CollectionsView({
       collectionModalCloseTimerRef.current = null;
     }, 220);
   }
+
+  useEffect(() => {
+    if (collectionsSection === 'curated') return;
+    setCollectionModalOpen(false);
+    setCollectionModalClosing(false);
+    setSelectedCollectionId('');
+  }, [collectionsSection]);
 
   const handleCreateCollection = async (event) => {
     event.preventDefault();
@@ -720,6 +774,14 @@ export default function CollectionsView({
         )}
       </div>
 
+      <SegmentedControl
+        items={collectionsSections}
+        activeId={collectionsSection}
+        onChange={setCollectionsSection}
+      />
+
+      {collectionsSection === 'curated' && (
+        <>
       {collectionsError && (
         <div className="rounded-2xl border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm text-red-100">
           {collectionsError}
@@ -1206,6 +1268,151 @@ export default function CollectionsView({
           </div>
         </div>
       ), document.body)}
+        </>
+      )}
+
+      {collectionsSection === 'forYou' && (
+        <>
+          <div className="glass app-panel p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <p className="text-sm font-black">{t.collectionsForYouTitle}</p>
+              <p className="text-xs opacity-65 mt-1">
+                {interpolate(t.collectionsForYouSeedsCount, { count: recommendationSeedCount })}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={refreshRecommendations}
+              disabled={recommendationsLoading}
+              className="px-4 py-2 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest transition-all disabled:opacity-60"
+            >
+              {t.collectionsForYouRefresh}
+            </button>
+          </div>
+
+          {recommendationsError && (
+            <div className="rounded-2xl border border-red-400/35 bg-red-500/10 px-4 py-4 text-sm text-red-100 space-y-3">
+              <p className="font-black">{t.collectionsForYouErrorTitle}</p>
+              <p>{recommendationsError}</p>
+              <button
+                type="button"
+                onClick={refreshRecommendations}
+                className="px-4 py-2 rounded-xl border border-red-300/35 bg-red-400/20 hover:bg-red-400/30 text-xs font-black uppercase tracking-widest transition-all"
+              >
+                {t.collectionsForYouRetry}
+              </button>
+            </div>
+          )}
+
+          {recommendationsLoading && (
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {Array.from({ length: 10 }).map((_, index) => (
+                <div key={`for-you-skeleton-${index}`} className="media-card">
+                  <div className="media-poster catalog-skeleton-poster">
+                    <div className="catalog-skeleton-shimmer" />
+                  </div>
+                  <div className="catalog-skeleton-line" style={{ width: '88%' }} />
+                  <div className="catalog-skeleton-line" style={{ width: '46%' }} />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!recommendationsLoading && !recommendationsError && recommendationSeedCount === 0 && (
+            <div className="empty-state">
+              <div className="empty-state-icon" aria-hidden="true">{'\u2728'}</div>
+              <p className="empty-state-title">{t.collectionsForYouSeedEmptyTitle}</p>
+              <p className="empty-state-hint">{t.collectionsForYouSeedEmptyHint}</p>
+            </div>
+          )}
+
+          {!recommendationsLoading && !recommendationsError && recommendationSeedCount > 0 && visibleRecommendations.length === 0 && (
+            <div className="empty-state">
+              <div className="empty-state-icon" aria-hidden="true">{'\u{1F4AD}'}</div>
+              <p className="empty-state-title">{t.collectionsForYouEmptyTitle}</p>
+              <p className="empty-state-hint">{t.collectionsForYouEmptyHint}</p>
+            </div>
+          )}
+
+          {!recommendationsLoading && visibleRecommendations.length > 0 && (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {visibleRecommendations.map((item) => {
+                  const libEntry = getLibraryEntry(item.mediaType, item.id);
+                  const badge = libEntry && STATUS_BADGE_CONFIG[libEntry.status];
+                  const year = getYear(item);
+                  const genre = (item.genre_ids?.length > 0 || item.genres?.length > 0)
+                    ? (item.genres?.[0]?.name || '')
+                    : '';
+                  const reasonText = getRecommendationReasonText(item);
+
+                  return (
+                    <div
+                      key={`recommendation-${item.mediaType}-${item.id}`}
+                      onClick={() => handleCardClick(item)}
+                      onContextMenu={(event) => onContextMenu(event, item)}
+                      onTouchStart={(event) => onTouchStart(event, item)}
+                      onTouchMove={onTouchMove}
+                      onTouchEnd={onTouchEnd}
+                      onTouchCancel={onTouchCancel}
+                      className="media-card group cursor-pointer"
+                    >
+                      <div className="media-poster">
+                        <LazyImg
+                          src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'}
+                          className="w-full aspect-[2/3] object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+                          alt={item.title || item.name}
+                        />
+                        {badge && (
+                          <div
+                            className="media-pill absolute top-2 right-2 text-white uppercase flex items-center gap-1 shadow-lg"
+                            style={{ background: badge.bg }}
+                          >
+                            <span>{badge.icon}</span>
+                            <span>{badge.label}</span>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openQuickActions(item, event.clientX, event.clientY);
+                          }}
+                          className="quick-action-trigger"
+                          aria-label={t.quickActions}
+                          title={t.quickActions}
+                        >
+                          <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden="true">
+                            <path d="M12 5v14M5 12h14" />
+                          </svg>
+                        </button>
+                        <div className="card-info-overlay">
+                          {item.vote_average > 0 && <p className="text-xs font-bold mb-0.5">{'\u2605'} {item.vote_average.toFixed(1)}</p>}
+                          {genre && <p className="text-[10px] font-medium opacity-80">{genre}</p>}
+                          {year && <p className="text-[10px] font-normal opacity-60">{year}</p>}
+                        </div>
+                      </div>
+                      <h3 className="media-title line-clamp-2">{item.title || item.name}</h3>
+                      <p className="media-meta">{year}</p>
+                      {reasonText && <p className="text-[11px] leading-snug opacity-70 mt-1">{reasonText}</p>}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {recommendationsHasMore && (
+                <button
+                  type="button"
+                  onClick={showMoreRecommendations}
+                  className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-black text-xs uppercase tracking-widest transition-all"
+                >
+                  {t.collectionsForYouShowMore}
+                </button>
+              )}
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }

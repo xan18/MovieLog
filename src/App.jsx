@@ -544,6 +544,7 @@ export default function App() {
           t={t}
           lang={lang}
           currentUserId={currentUserId}
+          library={library}
           canAuthorMode={canAuthorMode}
           isAuthor={isAuthor}
           authorModeEnabled={authorModeEnabled}
