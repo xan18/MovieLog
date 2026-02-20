@@ -59,6 +59,9 @@ export default function CollectionsView({
   const [manageError, setManageError] = useState('');
   const [manageNotice, setManageNotice] = useState('');
   const [mutating, setMutating] = useState(false);
+  const [draggingCollectionItemId, setDraggingCollectionItemId] = useState('');
+  const [dragOverCollectionItemId, setDragOverCollectionItemId] = useState('');
+  const [dragOverPosition, setDragOverPosition] = useState('');
 
   const [searchMediaType, setSearchMediaType] = useState('movie');
   const [searchQuery, setSearchQuery] = useState('');
@@ -236,6 +239,16 @@ export default function CollectionsView({
   useEffect(() => {
     loadCollectionItems(selectedCollectionId);
   }, [selectedCollectionId, loadCollectionItems]);
+
+  const resetOrderDragState = useCallback(() => {
+    setDraggingCollectionItemId('');
+    setDragOverCollectionItemId('');
+    setDragOverPosition('');
+  }, []);
+
+  useEffect(() => {
+    resetOrderDragState();
+  }, [selectedCollectionId, isCollectionModalOpen, resetOrderDragState]);
 
   const clearFeedback = () => {
     setManageError('');
@@ -455,34 +468,181 @@ export default function CollectionsView({
     setMutating(false);
   };
 
-  const moveItem = async (collectionItemId, direction) => {
-    if (!canManageSelected || !selectedCollectionId) return;
-    const currentIndex = collectionRows.findIndex((row) => row.id === collectionItemId);
-    const targetIndex = currentIndex + direction;
-    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= collectionRows.length) return;
+  const applyCollectionOrderLocally = (orderedRows) => {
+    const normalizedRows = orderedRows.map((row, index) => ({
+      ...row,
+      sort_order: index + 1,
+    }));
 
-    const reordered = [...collectionRows];
-    [reordered[currentIndex], reordered[targetIndex]] = [reordered[targetIndex], reordered[currentIndex]];
+    const positionById = new Map(
+      normalizedRows.map((row, index) => [String(row.id), index])
+    );
+
+    const normalizedItems = [...collectionItems]
+      .sort((a, b) => {
+        const aPos = positionById.get(String(a._collectionItemId));
+        const bPos = positionById.get(String(b._collectionItemId));
+        const fallback = normalizedRows.length + 1000;
+        return (aPos ?? fallback) - (bPos ?? fallback);
+      })
+      .map((item, index) => ({
+        ...item,
+        _sortOrder: index + 1,
+      }));
+
+    setCollectionRows(normalizedRows);
+    setCollectionItems(normalizedItems);
+    return normalizedRows;
+  };
+
+  const persistCollectionOrder = async (reorderedRows, rollbackState = null) => {
+    if (!canManageSelected || !selectedCollectionId) return false;
+    if (!Array.isArray(reorderedRows) || reorderedRows.length === 0) return false;
 
     setMutating(true);
     clearFeedback();
 
     const updates = await Promise.all(
-      reordered.map((row, index) => supabase
+      reorderedRows.map((row, index) => supabase
         .from('curated_collection_items')
-        .update({ sort_order: index + 1 })
+        .update({ sort_order: row.sort_order || (index + 1) })
         .eq('id', row.id))
     );
 
     const failed = updates.find((result) => result.error);
     if (failed?.error) {
+      if (rollbackState?.rows && rollbackState?.items) {
+        setCollectionRows(rollbackState.rows);
+        setCollectionItems(rollbackState.items);
+      }
       setManageError(failed.error.message);
       setMutating(false);
+      return false;
+    }
+
+    setMutating(false);
+    return true;
+  };
+
+  const moveItemToIndex = async (collectionItemId, targetIndex) => {
+    if (!canManageSelected || !selectedCollectionId) return;
+    const currentIndex = collectionRows.findIndex((row) => String(row.id) === String(collectionItemId));
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= collectionRows.length || currentIndex === targetIndex) return;
+
+    const reordered = [...collectionRows];
+    const [movedRow] = reordered.splice(currentIndex, 1);
+    if (!movedRow) return;
+    reordered.splice(targetIndex, 0, movedRow);
+
+    const rollbackState = {
+      rows: collectionRows,
+      items: collectionItems,
+    };
+    const normalizedRows = applyCollectionOrderLocally(reordered);
+    await persistCollectionOrder(normalizedRows, rollbackState);
+  };
+
+  const resolveDropIndex = useCallback((sourceId, targetId, position) => {
+    const sourceIndex = collectionRows.findIndex((row) => String(row.id) === String(sourceId));
+    const targetIndexBase = collectionRows.findIndex((row) => String(row.id) === String(targetId));
+    if (sourceIndex < 0 || targetIndexBase < 0) return null;
+
+    let nextIndex = targetIndexBase + (position === 'after' ? 1 : 0);
+    if (sourceIndex < nextIndex) nextIndex -= 1;
+    return { sourceIndex, nextIndex };
+  }, [collectionRows]);
+
+  const getDropPosition = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const midpoint = rect.top + (rect.height / 2);
+    return event.clientY > midpoint ? 'after' : 'before';
+  };
+
+  const handleOrderDragStart = (event, collectionItemId) => {
+    if (mutating) {
+      event.preventDefault();
+      return;
+    }
+    const normalizedId = String(collectionItemId);
+    setDraggingCollectionItemId(normalizedId);
+    setDragOverCollectionItemId(normalizedId);
+    setDragOverPosition('before');
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', normalizedId);
+  };
+
+  const handleOrderDragOver = (event, targetItemId) => {
+    if (!draggingCollectionItemId || mutating) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDragOverCollectionItemId(String(targetItemId));
+    setDragOverPosition(getDropPosition(event));
+  };
+
+  const handleOrderDrop = async (event, targetItemId) => {
+    event.preventDefault();
+    if (mutating) {
+      resetOrderDragState();
       return;
     }
 
-    await loadCollectionItems(selectedCollectionId);
-    setMutating(false);
+    const draggedId = draggingCollectionItemId || event.dataTransfer.getData('text/plain');
+    if (!draggedId) {
+      resetOrderDragState();
+      return;
+    }
+
+    const resolved = resolveDropIndex(draggedId, targetItemId, getDropPosition(event));
+    resetOrderDragState();
+    if (!resolved || resolved.nextIndex === resolved.sourceIndex) return;
+    await moveItemToIndex(draggedId, resolved.nextIndex);
+  };
+
+  const handleOrderDragEnd = () => {
+    resetOrderDragState();
+  };
+
+  const handleOrderTouchStart = (event, collectionItemId) => {
+    if (mutating || event.touches.length !== 1) return;
+    event.preventDefault();
+    const normalizedId = String(collectionItemId);
+    setDraggingCollectionItemId(normalizedId);
+    setDragOverCollectionItemId(normalizedId);
+    setDragOverPosition('before');
+  };
+
+  const handleOrderTouchMove = (event) => {
+    if (!draggingCollectionItemId || mutating || event.touches.length !== 1) return;
+    if (typeof document === 'undefined') return;
+    event.preventDefault();
+    const touch = event.touches[0];
+    const targetElement = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-order-item-id]');
+    if (!targetElement) return;
+
+    const targetItemId = targetElement.getAttribute('data-order-item-id');
+    if (!targetItemId) return;
+    const rect = targetElement.getBoundingClientRect();
+    const position = touch.clientY > rect.top + (rect.height / 2) ? 'after' : 'before';
+    setDragOverCollectionItemId(targetItemId);
+    setDragOverPosition(position);
+  };
+
+  const handleOrderTouchEnd = async () => {
+    const draggedId = draggingCollectionItemId;
+    if (!draggedId || mutating) {
+      resetOrderDragState();
+      return;
+    }
+
+    const targetItemId = dragOverCollectionItemId || draggedId;
+    const resolved = resolveDropIndex(draggedId, targetItemId, dragOverPosition || 'before');
+    resetOrderDragState();
+    if (!resolved || resolved.nextIndex === resolved.sourceIndex) return;
+    await moveItemToIndex(draggedId, resolved.nextIndex);
+  };
+
+  const handleOrderTouchCancel = () => {
+    resetOrderDragState();
   };
 
   return (
@@ -876,41 +1036,53 @@ export default function CollectionsView({
           {canManageSelected && (
             <div className="glass app-panel p-5 space-y-2">
               <p className="text-sm font-black mb-2">{t.collectionsOrderTitle}</p>
-              {collectionItems.map((item, index) => (
-                <div key={`manage-${item._collectionItemId}`} className="collections-order-row">
-                  <p className="text-sm font-semibold truncate">
-                    {index + 1}. {item.title || item.name}
-                  </p>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => moveItem(item._collectionItemId, -1)}
-                      disabled={mutating || index === 0}
-                      className="collections-action-btn"
-                      title={t.collectionsMoveUp}
+              {collectionItems.map((item, index) => {
+                const itemId = String(item._collectionItemId);
+                const isDragging = draggingCollectionItemId === itemId;
+                const isDragTarget = !isDragging && draggingCollectionItemId && dragOverCollectionItemId === itemId;
+                return (
+                  <div
+                    key={`manage-${item._collectionItemId}`}
+                    className={`collections-order-row ${isDragging ? 'dragging' : ''} ${isDragTarget ? (dragOverPosition === 'after' ? 'drag-over-after' : 'drag-over-before') : ''}`}
+                    data-order-item-id={itemId}
+                    draggable={!mutating}
+                    onDragStart={(event) => handleOrderDragStart(event, item._collectionItemId)}
+                    onDragOver={(event) => handleOrderDragOver(event, item._collectionItemId)}
+                    onDrop={(event) => handleOrderDrop(event, item._collectionItemId)}
+                    onDragEnd={handleOrderDragEnd}
+                  >
+                    <div className="collections-order-main">
+                      <span
+                        className="collections-drag-grip"
+                        aria-hidden="true"
+                        onTouchStart={(event) => handleOrderTouchStart(event, item._collectionItemId)}
+                        onTouchMove={handleOrderTouchMove}
+                        onTouchEnd={handleOrderTouchEnd}
+                        onTouchCancel={handleOrderTouchCancel}
                       >
-                      ^
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveItem(item._collectionItemId, 1)}
-                      disabled={mutating || index === collectionItems.length - 1}
-                      className="collections-action-btn"
-                      title={t.collectionsMoveDown}
+                        <span />
+                        <span />
+                        <span />
+                      </span>
+                      <p className="text-sm font-semibold truncate">
+                        {index + 1}. {item.title || item.name}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => removeItemFromCollection(item._collectionItemId)}
+                        disabled={mutating}
+                        draggable={false}
+                        onDragStart={(event) => event.preventDefault()}
+                        className="collections-action-btn danger"
                       >
-                      v
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeItemFromCollection(item._collectionItemId)}
-                      disabled={mutating}
-                      className="collections-action-btn danger"
-                    >
-                      {t.collectionsItemRemove}
-                    </button>
+                        {t.collectionsItemRemove}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
