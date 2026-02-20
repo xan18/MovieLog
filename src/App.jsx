@@ -90,6 +90,11 @@ export default function App() {
   selectedItemRef.current = selectedItem;
   const skipNextCloudSyncRef = useRef(false);
   const lastCloudSyncRef = useRef('');
+  const modalDepthRef = useRef(0);
+  const prevModalDepthRef = useRef(0);
+  const modalHistoryDepthRef = useRef(0);
+  const popstateCloseCountRef = useRef(0);
+  const programmaticBackCountRef = useRef(0);
 
   // Hooks
   const catalog = useCatalog({ lang, t, persistCatalogFilters });
@@ -303,10 +308,122 @@ export default function App() {
     setTimeout(() => { setSelectedPerson(null); setClosingPerson(false); }, 220);
   }, []);
 
+  const closeTopModal = useCallback((immediate = false) => {
+    if (quickActions) { setQuickActions(null); return; }
+    if (movieRatingModal) { setMovieRatingModal(null); return; }
+    if (ratingModal) { setRatingModal(null); return; }
+    if (deleteModal) { setDeleteModal(null); return; }
+    if (trailerId) { setTrailerId(null); return; }
+
+    if (selectedPerson) {
+      if (immediate) {
+        setSelectedPerson(null);
+        setClosingPerson(false);
+      } else {
+        closePerson();
+      }
+      return;
+    }
+
+    if (selectedItem) {
+      if (immediate) {
+        setSelectedItem(null);
+        setClosingDetails(false);
+      } else {
+        closeDetails();
+      }
+    }
+  }, [
+    closeDetails,
+    closePerson,
+    deleteModal,
+    movieRatingModal,
+    quickActions,
+    ratingModal,
+    selectedItem,
+    selectedPerson,
+    trailerId,
+  ]);
+
+  const modalDepth = useMemo(() => (
+    Number(Boolean(selectedItem)) +
+    Number(Boolean(selectedPerson)) +
+    Number(Boolean(trailerId)) +
+    Number(Boolean(deleteModal)) +
+    Number(Boolean(ratingModal)) +
+    Number(Boolean(movieRatingModal)) +
+    Number(Boolean(quickActions))
+  ), [
+    deleteModal,
+    movieRatingModal,
+    quickActions,
+    ratingModal,
+    selectedItem,
+    selectedPerson,
+    trailerId,
+  ]);
+
   // в”Ђв”Ђ Scroll to top on tab switch в”Ђв”Ђ
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [activeTab]);
+
+  // Keep browser back stack in sync with opened modal layers.
+  useEffect(() => {
+    const prevDepth = prevModalDepthRef.current;
+
+    if (modalDepth > prevDepth) {
+      const delta = modalDepth - prevDepth;
+      for (let i = 0; i < delta; i += 1) {
+        const nextDepth = modalHistoryDepthRef.current + 1;
+        window.history.pushState(
+          { ...(window.history.state || {}), __movielogModal: true, __movielogModalDepth: nextDepth },
+          ''
+        );
+        modalHistoryDepthRef.current = nextDepth;
+      }
+    } else if (modalDepth < prevDepth) {
+      let delta = prevDepth - modalDepth;
+
+      if (popstateCloseCountRef.current > 0) {
+        const handledByPopstate = Math.min(delta, popstateCloseCountRef.current);
+        popstateCloseCountRef.current -= handledByPopstate;
+        delta -= handledByPopstate;
+      }
+
+      const closable = Math.min(delta, modalHistoryDepthRef.current);
+      if (closable > 0) {
+        programmaticBackCountRef.current += closable;
+        modalHistoryDepthRef.current -= closable;
+        for (let i = 0; i < closable; i += 1) {
+          window.history.back();
+        }
+      }
+    }
+
+    prevModalDepthRef.current = modalDepth;
+    modalDepthRef.current = modalDepth;
+  }, [modalDepth]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      if (programmaticBackCountRef.current > 0) {
+        programmaticBackCountRef.current -= 1;
+        return;
+      }
+
+      if (modalDepthRef.current < 1) return;
+
+      if (modalHistoryDepthRef.current > 0) {
+        modalHistoryDepthRef.current -= 1;
+      }
+      popstateCloseCountRef.current += 1;
+      closeTopModal(true);
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [closeTopModal]);
 
   // в”Ђв”Ђ Add pulse trigger в”Ђв”Ђ
   const triggerAddPulse = useCallback((itemId) => {
