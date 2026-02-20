@@ -5,6 +5,7 @@ import { getYear } from '../../utils/appUtils.js';
 import { tmdbUrl } from '../../services/tmdb.js';
 import { supabase } from '../../services/supabase.js';
 import { useDebounce } from '../../hooks/useDebounce.js';
+import { useQuickActionGesture } from '../../hooks/useQuickActionGesture.js';
 
 const createEmptyDraft = () => ({
   title_ru: '',
@@ -61,6 +62,19 @@ export default function CollectionsView({
   const debouncedSearchQuery = useDebounce(searchQuery.trim(), 350);
 
   const TMDB_LANG = lang === 'ru' ? 'ru-RU' : 'en-US';
+  const {
+    onContextMenu,
+    onTouchStart,
+    onTouchMove,
+    onTouchEnd,
+    onTouchCancel,
+    consumeLongPress,
+  } = useQuickActionGesture(openQuickActions);
+
+  const handleCardClick = (item) => {
+    if (consumeLongPress()) return;
+    onCardClick(item);
+  };
 
   const visibilityOptions = useMemo(() => ([
     { value: 'public', label: t.collectionsVisibilityPublic },
@@ -659,7 +673,12 @@ export default function CollectionsView({
                 return (
                   <div
                     key={`search-${item.mediaType}-${item.id}`}
-                    onClick={() => onCardClick(item)}
+                    onClick={() => handleCardClick(item)}
+                    onContextMenu={(event) => onContextMenu(event, item)}
+                    onTouchStart={(event) => onTouchStart(event, item)}
+                    onTouchMove={onTouchMove}
+                    onTouchEnd={onTouchEnd}
+                    onTouchCancel={onTouchCancel}
                     className="media-card group cursor-pointer card-stagger"
                     style={{ '--stagger-i': index }}
                   >
@@ -788,7 +807,12 @@ export default function CollectionsView({
               return (
                 <div
                   key={`collection-item-${item._collectionItemId || `${item.mediaType}-${item.id}`}`}
-                  onClick={() => onCardClick(item)}
+                  onClick={() => handleCardClick(item)}
+                  onContextMenu={(event) => onContextMenu(event, item)}
+                  onTouchStart={(event) => onTouchStart(event, item)}
+                  onTouchMove={onTouchMove}
+                  onTouchEnd={onTouchEnd}
+                  onTouchCancel={onTouchCancel}
                   className="media-card group cursor-pointer card-stagger"
                   style={{ '--stagger-i': index }}
                 >

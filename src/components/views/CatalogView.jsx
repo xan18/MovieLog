@@ -2,6 +2,7 @@ import React from 'react';
 import { CustomSelect, LazyImg } from '../ui.jsx';
 import { YEARS, getYear } from '../../utils/appUtils.js';
 import { IMG_500 } from '../../constants/appConstants.js';
+import { useQuickActionGesture } from '../../hooks/useQuickActionGesture.js';
 
 export default function CatalogView({
   // from useCatalog
@@ -48,6 +49,19 @@ export default function CatalogView({
   }));
 
   const showInitialSkeleton = isCatalogLoading && catalogItems.length === 0;
+  const {
+    onContextMenu,
+    onTouchStart,
+    onTouchMove,
+    onTouchEnd,
+    onTouchCancel,
+    consumeLongPress,
+  } = useQuickActionGesture(openQuickActions);
+
+  const handleCardClick = (item) => {
+    if (consumeLongPress()) return;
+    onCardClick(item);
+  };
 
   const resetCatalogFilters = () => {
     setQuery('');
@@ -146,7 +160,12 @@ export default function CatalogView({
           return (
             <div
               key={cardKey}
-              onClick={() => onCardClick(item)}
+              onClick={() => handleCardClick(item)}
+              onContextMenu={(event) => onContextMenu(event, item)}
+              onTouchStart={(event) => onTouchStart(event, item)}
+              onTouchMove={onTouchMove}
+              onTouchEnd={onTouchEnd}
+              onTouchCancel={onTouchCancel}
               className={`media-card group cursor-pointer card-stagger ${isPulsing ? 'add-pulse' : ''}`}
               style={{ '--stagger-i': i }}
             >

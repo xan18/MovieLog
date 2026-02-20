@@ -2,6 +2,7 @@
 import { SegmentedControl, LazyImg } from '../ui.jsx';
 import { RATINGS } from '../../utils/appUtils.js';
 import { IMG_200 } from '../../constants/appConstants.js';
+import { useQuickActionGesture } from '../../hooks/useQuickActionGesture.js';
 
 function RatingChart({ ratingDist, gradId }) {
   const rawMax = Math.max(...RATINGS.map((r) => ratingDist[r] || 0), 1);
@@ -94,8 +95,22 @@ export default function StatsView({
   t,
   statsView, setStatsView,
   peopleView, setPeopleView,
-  getPersonDetails, getFullDetails,
+  getPersonDetails, getFullDetails, openQuickActions,
 }) {
+  const {
+    onContextMenu,
+    onTouchStart,
+    onTouchMove,
+    onTouchEnd,
+    onTouchCancel,
+    consumeLongPress,
+  } = useQuickActionGesture(openQuickActions);
+
+  const handleDetailsOpen = (item) => {
+    if (consumeLongPress()) return;
+    getFullDetails(item);
+  };
+
   const totalItems = movieStats.total + tvStats.total;
   const totalWatched = movieStats.completed + tvStats.completed;
   const totalPlanned = movieStats.planned + tvStats.planned;
@@ -200,7 +215,16 @@ export default function StatsView({
                 <p className="analytics-block-title">{t.bestMovies}</p>
                 <div className="analytics-list">
                   {movieStats.topRated.map((movie, i) => (
-                    <button key={movie.id} onClick={() => getFullDetails(movie)} className="analytics-list-row">
+                    <button
+                      key={movie.id}
+                      onClick={() => handleDetailsOpen(movie)}
+                      onContextMenu={(event) => onContextMenu(event, movie)}
+                      onTouchStart={(event) => onTouchStart(event, movie)}
+                      onTouchMove={onTouchMove}
+                      onTouchEnd={onTouchEnd}
+                      onTouchCancel={onTouchCancel}
+                      className="analytics-list-row"
+                    >
                       <span className="analytics-list-rank">{i + 1}</span>
                       {movie.poster_path
                         ? <LazyImg src={`${IMG_200}${movie.poster_path}`} className="analytics-list-poster" />
@@ -294,7 +318,16 @@ export default function StatsView({
                 <p className="analytics-block-title">{t.bestShows}</p>
                 <div className="analytics-list">
                   {tvStats.topRated.map((show, i) => (
-                    <button key={show.id} onClick={() => getFullDetails(show)} className="analytics-list-row">
+                    <button
+                      key={show.id}
+                      onClick={() => handleDetailsOpen(show)}
+                      onContextMenu={(event) => onContextMenu(event, show)}
+                      onTouchStart={(event) => onTouchStart(event, show)}
+                      onTouchMove={onTouchMove}
+                      onTouchEnd={onTouchEnd}
+                      onTouchCancel={onTouchCancel}
+                      className="analytics-list-row"
+                    >
                       <span className="analytics-list-rank">{i + 1}</span>
                       {show.poster_path
                         ? <LazyImg src={`${IMG_200}${show.poster_path}`} className="analytics-list-poster" />

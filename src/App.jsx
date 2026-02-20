@@ -515,11 +515,6 @@ export default function App() {
     setQuickActions({ item, x: clampedX, y: clampedY });
   }, []);
 
-  const onCardContextMenu = useCallback((e, item) => {
-    e.preventDefault();
-    openQuickActions(item, e.clientX, e.clientY);
-  }, [openQuickActions]);
-
   const onCardClick = (item) => {
     getFullDetails(item);
   };
@@ -975,7 +970,6 @@ export default function App() {
           t={t}
           onCardClick={onCardClick}
           openQuickActions={openQuickActions}
-          onCardContextMenu={onCardContextMenu}
           setActiveTab={setActiveTab}
         />
         </div>
@@ -991,6 +985,7 @@ export default function App() {
           peopleView={peopleView} setPeopleView={setPeopleView}
           getPersonDetails={getPersonDetails}
           getFullDetails={getFullDetails}
+          openQuickActions={openQuickActions}
         />
         </div>
       )}

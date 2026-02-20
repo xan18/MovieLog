@@ -2,6 +2,7 @@ import React from 'react';
 import { CustomSelect, LazyImg } from '../ui.jsx';
 import { getYear } from '../../utils/appUtils.js';
 import { IMG_500 } from '../../constants/appConstants.js';
+import { useQuickActionGesture } from '../../hooks/useQuickActionGesture.js';
 
 export default function LibraryView({
   shown, library,
@@ -12,9 +13,22 @@ export default function LibraryView({
   t,
   onCardClick,
   openQuickActions,
-  onCardContextMenu,
   setActiveTab,
 }) {
+  const {
+    onContextMenu,
+    onTouchStart,
+    onTouchMove,
+    onTouchEnd,
+    onTouchCancel,
+    consumeLongPress,
+  } = useQuickActionGesture(openQuickActions);
+
+  const handleCardClick = (item) => {
+    if (consumeLongPress()) return;
+    onCardClick(item);
+  };
+
   const canSortByMyRating = shelf !== 'planned';
   const sortOptions = [
     { value: 'imdbRating', label: t.byImdbRating },
@@ -74,9 +88,13 @@ export default function LibraryView({
               key={`${item.mediaType}-${item.id}`}
               className="media-card group card-stagger"
               style={{ '--stagger-i': i }}
-              onContextMenu={(e) => onCardContextMenu(e, item)}
+              onContextMenu={(event) => onContextMenu(event, item)}
+              onTouchStart={(event) => onTouchStart(event, item)}
+              onTouchMove={onTouchMove}
+              onTouchEnd={onTouchEnd}
+              onTouchCancel={onTouchCancel}
             >
-              <div onClick={() => onCardClick(item)} className="media-poster cursor-pointer">
+              <div onClick={() => handleCardClick(item)} className="media-poster cursor-pointer">
                 <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'} className="w-full aspect-[2/3] object-cover transition-transform duration-300 group-hover:scale-[1.04]" alt={item.title || item.name} />
                 {item.rating > 0 && <div className="media-pill absolute top-2 right-2 bg-yellow-500 text-black">{'\u2605'} {item.rating}</div>}
                 {epProgress?.badge && <div className={`media-pill absolute top-2 left-2 ${epProgress.badge.color} shadow-lg`}>{epProgress.badge.text}</div>}
