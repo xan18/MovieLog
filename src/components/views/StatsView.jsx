@@ -129,7 +129,6 @@ export default function StatsView({
     { key: 'tv-completed', label: t.watched, value: tvStats.completed },
     { key: 'tv-planned', label: t.inPlans, value: tvStats.planned },
     { key: 'tv-dropped', label: t.droppedStat, value: tvStats.dropped },
-    { key: 'tv-paused', label: t.pausedStat, value: tvStats.onHold },
   ];
 
   return (

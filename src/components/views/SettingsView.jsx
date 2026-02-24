@@ -3,6 +3,11 @@ import { CustomSelect, LazyImg } from '../ui.jsx';
 import { IMG_500 } from '../../constants/appConstants.js';
 import { sanitizeLibraryData } from '../../utils/librarySanitizer.js';
 import { readJsonFileWithFallback } from '../../utils/importUtils.js';
+import {
+  getEpisodeMarker,
+  getTvSeasonsSignature,
+  resolveTvProgressStatus,
+} from '../../utils/tvStatusUtils.js';
 import { getLanguageOptions, getThemeOptions } from '../../utils/uiOptions.js';
 import { getYear } from '../../utils/appUtils.js';
 import {
@@ -14,56 +19,6 @@ import {
 import { tmdbFetchJson } from '../../services/tmdb.js';
 
 const TMDB_LIBRARY_REFRESH_CHUNK_SIZE = 4;
-
-const countWatchedEpisodes = (watchedEpisodes = {}) =>
-  Object.values(watchedEpisodes).reduce((sum, episodes) => sum + (Array.isArray(episodes) ? episodes.length : 0), 0);
-
-const getTvTotalEpisodes = (item) => {
-  const totalFromNumber = Number(item?.number_of_episodes);
-  if (Number.isFinite(totalFromNumber) && totalFromNumber > 0) return totalFromNumber;
-
-  if (!Array.isArray(item?.seasons)) return 0;
-  return item.seasons.reduce((sum, season) => {
-    if (!season || Number(season.season_number) <= 0) return sum;
-    return sum + (Number(season.episode_count) || 0);
-  }, 0);
-};
-
-const resolveTvProgressStatus = (currentStatus, watchedEpisodes, totalEpisodes) => {
-  const watchedCount = countWatchedEpisodes(watchedEpisodes);
-  const canAutoComplete = currentStatus === 'watching' || currentStatus === 'planned';
-
-  if (canAutoComplete && totalEpisodes > 0 && watchedCount >= totalEpisodes) {
-    return 'completed';
-  }
-  if (currentStatus === 'planned' && watchedCount > 0) {
-    return 'watching';
-  }
-  if (currentStatus === 'completed') {
-    if (totalEpisodes > 0 && watchedCount < totalEpisodes) return 'watching';
-    if (totalEpisodes === 0 && watchedCount === 0) return 'watching';
-  }
-
-  return currentStatus;
-};
-
-const getTvSeasonsSignature = (seasons) => {
-  if (!Array.isArray(seasons)) return '';
-  return seasons
-    .filter((season) => season && Number(season.season_number) > 0)
-    .map((season) => `${season.season_number}:${Number(season.episode_count) || 0}`)
-    .join('|');
-};
-
-const getEpisodeMarker = (episode) => {
-  if (!episode || typeof episode !== 'object') return '';
-  return [
-    episode.id || '',
-    episode.season_number || '',
-    episode.episode_number || '',
-    episode.air_date || '',
-  ].join(':');
-};
 
 export default function SettingsView({
   library, setLibrary,
@@ -329,8 +284,7 @@ export default function SettingsView({
         const detail = detailMap.get(item.id);
         if (!detail) return item;
 
-        const totalEpisodes = getTvTotalEpisodes(detail);
-        const nextStatus = resolveTvProgressStatus(item.status, item.watchedEpisodes || {}, totalEpisodes);
+        const nextStatus = resolveTvProgressStatus(item.status, item.watchedEpisodes || {}, detail, item);
         const nextSeasons = Array.isArray(detail.seasons) ? detail.seasons : item.seasons;
         const nextNumberOfEpisodes = Number(detail.number_of_episodes) || item.number_of_episodes || 0;
         const nextNumberOfSeasons = Number(detail.number_of_seasons) || item.number_of_seasons || 0;

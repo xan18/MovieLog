@@ -1,40 +1,15 @@
 import { useCallback, useEffect } from 'react';
 import { tmdbFetchJson, tmdbFetchManyJson } from '../services/tmdb.js';
+import {
+  getEpisodeMarker,
+  getTvSeasonsSignature,
+  getTvTotalEpisodes,
+  resolveTvProgressStatus,
+} from '../utils/tvStatusUtils.js';
 
 const PERSON_FILMOGRAPHY_SORT_FALLBACK = '0000-00-00';
 
 const getPersonCreditDate = (item) => item?.release_date || item?.first_air_date || PERSON_FILMOGRAPHY_SORT_FALLBACK;
-const countWatchedEpisodes = (watchedEpisodes = {}) =>
-  Object.values(watchedEpisodes).reduce((sum, episodes) => sum + (Array.isArray(episodes) ? episodes.length : 0), 0);
-
-const getTvTotalEpisodes = (item) => {
-  const totalFromNumber = Number(item?.number_of_episodes);
-  if (Number.isFinite(totalFromNumber) && totalFromNumber > 0) return totalFromNumber;
-
-  if (!Array.isArray(item?.seasons)) return 0;
-  return item.seasons.reduce((sum, season) => {
-    if (!season || Number(season.season_number) <= 0) return sum;
-    return sum + (Number(season.episode_count) || 0);
-  }, 0);
-};
-
-const getTvSeasonsSignature = (seasons) => {
-  if (!Array.isArray(seasons)) return '';
-  return seasons
-    .filter((season) => season && Number(season.season_number) > 0)
-    .map((season) => `${season.season_number}:${Number(season.episode_count) || 0}`)
-    .join('|');
-};
-
-const getEpisodeMarker = (episode) => {
-  if (!episode || typeof episode !== 'object') return '';
-  return [
-    episode.id || '',
-    episode.season_number || '',
-    episode.episode_number || '',
-    episode.air_date || '',
-  ].join(':');
-};
 
 const normalizePersonRoleGroup = (credit, TMDB_LANG) => {
   const isRu = String(TMDB_LANG || '').toLowerCase().startsWith('ru');
@@ -414,15 +389,12 @@ export function useTmdbDetailsApi({
 
       if (item.mediaType === 'tv' && libEntry) {
         const previousTotalEpisodes = getTvTotalEpisodes(libEntry);
-        const freshTotalEpisodes = getTvTotalEpisodes(detail);
-        const watchedCount = countWatchedEpisodes(libEntry.watchedEpisodes || {});
-        const shouldMoveToWatching = (
-          libEntry.status === 'completed'
-          && freshTotalEpisodes > 0
-          && (
-            (previousTotalEpisodes > 0 && freshTotalEpisodes > previousTotalEpisodes)
-            || (previousTotalEpisodes === 0 && watchedCount > 0 && freshTotalEpisodes > watchedCount)
-          )
+        const freshTotalEpisodes = getTvTotalEpisodes(detail, libEntry);
+        const resolvedLibStatus = resolveTvProgressStatus(
+          libEntry.status,
+          libEntry.watchedEpisodes || {},
+          detail,
+          libEntry
         );
 
         const freshSeasonSignature = getTvSeasonsSignature(detail.seasons);
@@ -441,13 +413,16 @@ export function useTmdbDetailsApi({
           || prevLastEpisodeMarker !== freshLastEpisodeMarker
         );
 
-        if (metadataChanged || shouldMoveToWatching) {
+        if (metadataChanged || resolvedLibStatus !== libEntry.status) {
           setLibrary((prev) => prev.map((entry) => {
             if (entry.mediaType !== 'tv' || entry.id !== item.id) return entry;
 
-            const nextStatus = shouldMoveToWatching && entry.status === 'completed'
-              ? 'watching'
-              : entry.status;
+            const nextStatus = resolveTvProgressStatus(
+              entry.status,
+              entry.watchedEpisodes || {},
+              detail,
+              entry
+            );
             const nextSeasons = Array.isArray(detail.seasons) ? detail.seasons : entry.seasons;
             const nextEntry = {
               ...entry,

@@ -1,47 +1,10 @@
 import { useCallback } from 'react';
 import { isReleasedItem } from '../utils/releaseUtils.js';
-import { buildWatchedEpisodes, uniqSort } from '../utils/appUtils.js';
-
-const countWatchedEpisodes = (watchedEpisodes = {}) =>
-  Object.values(watchedEpisodes).reduce((sum, episodes) => sum + (Array.isArray(episodes) ? episodes.length : 0), 0);
-
-const getTotalEpisodes = (entry, contextItem = null) => {
-  const candidates = [contextItem, entry].filter(Boolean);
-
-  for (const candidate of candidates) {
-    const totalFromNumber = Number(candidate?.number_of_episodes);
-    if (Number.isFinite(totalFromNumber) && totalFromNumber > 0) return totalFromNumber;
-  }
-
-  for (const candidate of candidates) {
-    if (!Array.isArray(candidate?.seasons)) continue;
-    const totalFromSeasons = candidate.seasons.reduce((sum, season) => {
-      if (!season || Number(season.season_number) <= 0) return sum;
-      return sum + (Number(season.episode_count) || 0);
-    }, 0);
-    if (totalFromSeasons > 0) return totalFromSeasons;
-  }
-
-  return 0;
-};
-
-const resolveTvProgressStatus = (currentStatus, watchedEpisodes, totalEpisodes) => {
-  const watchedCount = countWatchedEpisodes(watchedEpisodes);
-  const canAutoComplete = currentStatus === 'watching' || currentStatus === 'planned';
-
-  if (canAutoComplete && totalEpisodes > 0 && watchedCount >= totalEpisodes) {
-    return 'completed';
-  }
-  if (currentStatus === 'planned' && watchedCount > 0) {
-    return 'watching';
-  }
-  if (currentStatus === 'completed') {
-    if (totalEpisodes > 0 && watchedCount < totalEpisodes) return 'watching';
-    if (totalEpisodes === 0 && watchedCount === 0) return 'watching';
-  }
-
-  return currentStatus;
-};
+import { uniqSort } from '../utils/appUtils.js';
+import {
+  buildTvWatchedEpisodesForCompletion,
+  resolveTvProgressStatus,
+} from '../utils/tvStatusUtils.js';
 
 export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemRef }) {
 
@@ -78,6 +41,14 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
               if (status === 'planned') {
                 return { ...x, status, watchedEpisodes: {}, seasonRatings: {}, episodeRuntimes: {}, rating: 0 };
               }
+              if (status === 'completed') {
+                const completionWatchedEpisodes = buildTvWatchedEpisodesForCompletion(item, x);
+                const nextWatchedEpisodes = Object.keys(completionWatchedEpisodes).length > 0
+                  ? completionWatchedEpisodes
+                  : (x.watchedEpisodes || {});
+                const nextStatus = resolveTvProgressStatus('completed', nextWatchedEpisodes, item, x);
+                return { ...x, status: nextStatus, watchedEpisodes: nextWatchedEpisodes };
+              }
               return { ...x, status };
             }
             return { ...x, status, rating: ratingVal || x.rating };
@@ -86,14 +57,19 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
         })
       );
     } else {
+      const completionWatchedEpisodes = item.mediaType === 'tv' && status === 'completed'
+        ? buildTvWatchedEpisodesForCompletion(item)
+        : {};
+      const resolvedTvStatus = item.mediaType === 'tv'
+        ? resolveTvProgressStatus(status, completionWatchedEpisodes, item)
+        : status;
       const newEntry = {
-        ...item, status,
+        ...item,
+        status: item.mediaType === 'tv' ? resolvedTvStatus : status,
         rating: item.mediaType === 'movie' ? (ratingVal || 0) : 0,
         dateAdded: Date.now(),
         ...(item.mediaType === 'tv' && {
-          watchedEpisodes: status === 'completed' && item.seasons
-            ? buildWatchedEpisodes(item.seasons)
-            : {},
+          watchedEpisodes: completionWatchedEpisodes,
           seasonRatings: {},
           episodeRuntimes: {}
         })
@@ -109,11 +85,12 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
         if (x.mediaType === 'tv' && x.id === tvId) {
           if (newStatus === 'completed' && !isReleasedItem(fullItem || x)) return x;
           const updated = { ...x, status: newStatus };
-          const seasonsForCompletion = Array.isArray(fullItem?.seasons)
-            ? fullItem.seasons
-            : (Array.isArray(x?.seasons) ? x.seasons : null);
-          if (newStatus === 'completed' && seasonsForCompletion) {
-            updated.watchedEpisodes = buildWatchedEpisodes(seasonsForCompletion);
+
+          if (newStatus === 'completed') {
+            const completionWatchedEpisodes = buildTvWatchedEpisodesForCompletion(fullItem, x);
+            if (Object.keys(completionWatchedEpisodes).length > 0) {
+              updated.watchedEpisodes = completionWatchedEpisodes;
+            }
           }
           if (newStatus === 'planned') {
             updated.watchedEpisodes = {};
@@ -121,6 +98,7 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
             updated.episodeRuntimes = {};
             updated.rating = 0;
           }
+          updated.status = resolveTvProgressStatus(updated.status, updated.watchedEpisodes || {}, fullItem, updated);
           return updated;
         }
         return x;
@@ -134,7 +112,6 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
         if (x.mediaType === 'tv' && x.id === tvId) {
           const w = { ...x.watchedEpisodes };
           const ctx = getTvContextItem(tvId, itemForContext);
-          const totalEpisodes = getTotalEpisodes(x, ctx);
           if (!w[seasonNum]) w[seasonNum] = [];
           const seasonEpCount = ctx?.seasons?.find(s => s.season_number === seasonNum)?.episode_count;
           const wasFullyWatched = w[seasonNum].length > 0 && seasonEpCount === w[seasonNum].length;
@@ -148,13 +125,13 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
               const avgRating = ratedSeasons.length > 0
                 ? Math.round(ratedSeasons.reduce((sum, r) => sum + r, 0) / ratedSeasons.length)
                 : 0;
-              const newStatus = resolveTvProgressStatus(x.status, w, totalEpisodes);
+              const newStatus = resolveTvProgressStatus(x.status, w, ctx, x);
               return { ...x, watchedEpisodes: w, seasonRatings, rating: avgRating, status: newStatus };
             }
           } else {
             w[seasonNum] = uniqSort([...w[seasonNum], epNum]);
           }
-          const newStatus = resolveTvProgressStatus(x.status, w, totalEpisodes);
+          const newStatus = resolveTvProgressStatus(x.status, w, ctx, x);
           return { ...x, watchedEpisodes: w, status: newStatus };
         }
         return x;
@@ -168,7 +145,6 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
         if (x.mediaType === 'tv' && x.id === tvId) {
           const w = { ...x.watchedEpisodes };
           const ctx = getTvContextItem(tvId);
-          const totalEpisodes = getTotalEpisodes(x, ctx);
           const targetEps = airedEpisodes || Array.from({ length: episodeCount }, (_, i) => i + 1);
           const current = w[seasonNum] || [];
           const allTargetWatched = targetEps.length > 0 && targetEps.every(ep => current.includes(ep));
@@ -181,12 +157,12 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
             const avgRating = ratedSeasons.length > 0
               ? Math.round(ratedSeasons.reduce((sum, r) => sum + r, 0) / ratedSeasons.length)
               : 0;
-            const newStatus = resolveTvProgressStatus(x.status, w, totalEpisodes);
+            const newStatus = resolveTvProgressStatus(x.status, w, ctx, x);
             return { ...x, watchedEpisodes: w, seasonRatings, rating: avgRating, status: newStatus };
           } else {
             w[seasonNum] = uniqSort([...current, ...targetEps]);
           }
-          const newStatus = resolveTvProgressStatus(x.status, w, totalEpisodes);
+          const newStatus = resolveTvProgressStatus(x.status, w, ctx, x);
           return { ...x, watchedEpisodes: w, status: newStatus };
         }
         return x;
@@ -215,8 +191,7 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
             : 0;
           const baseStatus = (ratingVal > 0 && x.status === 'planned') ? 'watching' : x.status;
           const ctx = getTvContextItem(tvId);
-          const totalEpisodes = getTotalEpisodes(x, ctx);
-          const newStatus = resolveTvProgressStatus(baseStatus, watchedEpisodes, totalEpisodes);
+          const newStatus = resolveTvProgressStatus(baseStatus, watchedEpisodes, ctx, x);
           return { ...x, seasonRatings, rating: avgRating, watchedEpisodes, status: newStatus };
         }
         return x;
@@ -236,10 +211,9 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
       setLibrary(prev => {
         const si = selectedItemRef.current;
         const watchedEpisodes = { [seasonNum]: [epNum] };
-        const totalEpisodes = getTotalEpisodes(si, si);
         const newEntry = {
           ...si,
-          status: resolveTvProgressStatus('watching', watchedEpisodes, totalEpisodes),
+          status: resolveTvProgressStatus('watching', watchedEpisodes, si),
           rating: 0,
           dateAdded: Date.now(),
           watchedEpisodes,
@@ -259,10 +233,9 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
       setLibrary(prev => {
         const si = selectedItemRef.current;
         const watchedEpisodes = { [seasonNum]: uniqSort([...airedEps]) };
-        const totalEpisodes = getTotalEpisodes(si, si);
         const newEntry = {
           ...si,
-          status: resolveTvProgressStatus('watching', watchedEpisodes, totalEpisodes),
+          status: resolveTvProgressStatus('watching', watchedEpisodes, si),
           rating: 0,
           dateAdded: Date.now(),
           watchedEpisodes,

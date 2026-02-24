@@ -6,6 +6,7 @@ import { tmdbFetchJson } from '../../services/tmdb.js';
 import { isReleasedDate } from '../../utils/releaseUtils.js';
 import { useQuickActionGesture } from '../../hooks/useQuickActionGesture.js';
 import { useAutoLoadMoreOnScroll } from '../../hooks/useAutoLoadMoreOnScroll.js';
+import { getTvProgressSnapshot } from '../../utils/tvStatusUtils.js';
 
 const pickDisplayTitle = (item, lang) => {
   if (!item) return '';
@@ -371,18 +372,19 @@ export default function LibraryView({
           const displayTitle = pickDisplayTitle(item, lang);
           const epProgress = (() => {
             if (item.mediaType !== 'tv') return null;
-            const w = item.watchedEpisodes || {};
-            const watchedCount = Object.values(w).reduce((sum, eps) => sum + eps.length, 0);
-            const totalCount = (item.number_of_episodes || item.seasons?.reduce((s, se) => se.season_number > 0 ? s + se.episode_count : s, 0) || 0);
-            if (totalCount === 0) return null;
-            const remaining = totalCount - watchedCount;
-            const pct = Math.round((watchedCount / totalCount) * 100);
+            const progress = getTvProgressSnapshot(item.watchedEpisodes || {}, item);
+            const displayTarget = progress.targetEpisodes > 0
+              ? progress.targetEpisodes
+              : progress.totalEpisodes;
+            if (displayTarget <= 0) return null;
+            const watchedForDisplay = Math.min(progress.watchedCount, displayTarget);
+            const remaining = Math.max(0, displayTarget - watchedForDisplay);
+            const pct = Math.round((watchedForDisplay / displayTarget) * 100);
             const allTrackedWatched = remaining <= 0;
-            const isOngoingSeries = Boolean(item.in_production) || Boolean(item.next_episode_to_air);
-            const waitingForNewEpisodes = allTrackedWatched && isOngoingSeries;
+            const waitingForNewEpisodes = progress.isWaitingForNewEpisodes;
             const badge = allTrackedWatched
               ? waitingForNewEpisodes
-                ? { variant: 'airing', color: 'bg-sky-600', title: t.returning || t.inProduction || 'Ongoing (all aired watched)' }
+                ? { variant: 'airing', color: 'bg-sky-600', title: t.waitingForNewEpisodes || t.waiting || 'Waiting for new episodes' }
                 : { variant: 'completed', color: 'bg-green-600', title: t.ended || 'Ended (completed)' }
               : { text: `\u25B6 ${remaining}`, color: 'bg-white/80 text-black', title: `${remaining}` };
             return { badge, pct, done: allTrackedWatched && !waitingForNewEpisodes, waitingForNewEpisodes };
@@ -447,6 +449,11 @@ export default function LibraryView({
               )}
               <h3 className="media-title line-clamp-2">{displayTitle}</h3>
               <p className="media-meta font-normal">{getYear(item)}</p>
+              {epProgress?.waitingForNewEpisodes && (
+                <p className="text-[10px] font-black uppercase tracking-widest text-sky-300 mt-1">
+                  {t.waitingForNewEpisodes || t.waiting || 'Waiting'}
+                </p>
+              )}
             </div>
           );
         })}

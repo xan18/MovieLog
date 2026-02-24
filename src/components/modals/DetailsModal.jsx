@@ -219,7 +219,7 @@ export default function DetailsModal({
             }} className={`details-status-btn flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all active:scale-95 ${activeLibraryStatus === 'completed' ? 'is-active' : ''} ${!isItemReleased ? 'is-disabled' : ''}`}>{t.alreadyWatched}</button>
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {TV_STATUSES.map(s => (
               <button key={s.id} disabled={s.id === 'completed' && !isItemReleased} onClick={() => {
                 if (s.id === 'completed' && !isItemReleased) return;

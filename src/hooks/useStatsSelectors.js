@@ -59,7 +59,6 @@ export function useStatsSelectors({ library, peopleView }) {
     const watching = shows.filter((x) => x.status === 'watching');
     const planned = shows.filter((x) => x.status === 'planned');
     const dropped = shows.filter((x) => x.status === 'dropped');
-    const onHold = shows.filter((x) => x.status === 'on_hold');
     const ratedFromSeasons = shows
       .map((show) => {
         const seasonRatings = Object.values(show.seasonRatings || {}).filter((rating) => Number(rating) > 0);
@@ -124,7 +123,6 @@ export function useStatsSelectors({ library, peopleView }) {
       watching: watching.length,
       planned: planned.length,
       dropped: dropped.length,
-      onHold: onHold.length,
       rated: ratedFromSeasons.length,
       totalEpisodes,
       totalSeasons,

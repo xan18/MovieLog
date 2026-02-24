@@ -8,7 +8,6 @@ export const getTvStatuses = (t) => [
   { id: 'planned', label: t.planned },
   { id: 'completed', label: t.completed },
   { id: 'dropped', label: t.dropped },
-  { id: 'on_hold', label: t.onHold },
 ];
 
 export const getStatusBadgeConfig = (t) => ({
@@ -16,7 +15,7 @@ export const getStatusBadgeConfig = (t) => ({
   planned: { label: t.badgePlanned, bg: 'rgba(168,85,247,0.85)', icon: '🕐' },
   completed: { label: t.badgeCompleted, bg: 'rgba(34,197,94,0.85)', icon: '✓' },
   dropped: { label: t.badgeDropped, bg: 'rgba(239,68,68,0.85)', icon: '✕' },
-  on_hold: { label: t.badgeOnHold, bg: 'rgba(251,191,36,0.85)', icon: '⏸' },
+  waiting: { label: t.badgeWaiting || t.waiting || t.badgeWatching, bg: 'rgba(14,165,233,0.85)', icon: '…' },
 });
 
 export const getTvShowStatusMap = (t) => ({

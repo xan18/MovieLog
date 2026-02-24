@@ -1,7 +1,7 @@
 import { isReleasedDate } from './releaseUtils.js';
 
 const MOVIE_STATUSES = new Set(['planned', 'completed']);
-const TV_STATUSES = new Set(['watching', 'planned', 'completed', 'dropped', 'on_hold']);
+const TV_STATUSES = new Set(['watching', 'planned', 'completed', 'dropped']);
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
@@ -77,7 +77,8 @@ export const sanitizeLibraryEntry = (entry) => {
     };
   }
 
-  let status = TV_STATUSES.has(entry.status) ? entry.status : 'watching';
+  const normalizedInputStatus = entry.status === 'on_hold' ? 'watching' : entry.status;
+  let status = TV_STATUSES.has(normalizedInputStatus) ? normalizedInputStatus : 'watching';
   let rating = clampRating(entry.rating);
   let watchedEpisodes = normalizeEpisodeMap(entry.watchedEpisodes);
   let seasonRatings = normalizeSeasonRatings(entry.seasonRatings);

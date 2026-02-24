@@ -15,8 +15,11 @@ import { tmdbFetchManyJson } from './services/tmdb.js';
 import { hidePersonalRecommendationForUser } from './services/personalRecommendations.js';
 import { getMovieStatuses, getTvStatuses, getStatusBadgeConfig, getTvShowStatusMap, getCrewRoleMap } from './utils/statusConfig.js';
 import { isReleasedItem } from './utils/releaseUtils.js';
-import { buildWatchedEpisodes } from './utils/appUtils.js';
 import { sanitizeLibraryData } from './utils/librarySanitizer.js';
+import {
+  buildTvWatchedEpisodesForCompletion,
+  resolveTvProgressStatus,
+} from './utils/tvStatusUtils.js';
 import { STORAGE_KEY } from './constants/appConstants.js';
 import { I18N } from './i18n/translations.js';
 
@@ -253,7 +256,7 @@ export default function App() {
     if (libraryType === 'movie') {
       if (!['all', 'planned', 'completed'].includes(shelf)) setShelf('planned');
     } else {
-      if (!['all', 'watching', 'planned', 'completed', 'dropped', 'on_hold'].includes(shelf)) setShelf('watching');
+      if (!['all', 'watching', 'planned', 'completed', 'dropped'].includes(shelf)) setShelf('watching');
     }
   }, [libraryType]);
 
@@ -383,10 +386,19 @@ export default function App() {
 
         if (
           mergedEntry.mediaType === 'tv'
-          && mergedEntry.status === 'completed'
-          && Array.isArray(detail.seasons)
         ) {
-          mergedEntry.watchedEpisodes = buildWatchedEpisodes(detail.seasons);
+          if (mergedEntry.status === 'completed') {
+            const completionWatchedEpisodes = buildTvWatchedEpisodesForCompletion(detail, mergedEntry);
+            if (Object.keys(completionWatchedEpisodes).length > 0) {
+              mergedEntry.watchedEpisodes = completionWatchedEpisodes;
+            }
+          }
+          mergedEntry.status = resolveTvProgressStatus(
+            mergedEntry.status,
+            mergedEntry.watchedEpisodes || {},
+            detail,
+            mergedEntry
+          );
         }
 
         return mergedEntry;

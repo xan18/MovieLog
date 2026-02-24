@@ -55,4 +55,22 @@ describe('sanitizeLibraryEntry', () => {
     expect(entry?.seasonRatings).toEqual({ 1: 8, 3: 9 });
     expect(entry?.rating).toBe(5);
   });
+
+  it('migrates legacy on_hold tv status to watching', () => {
+    const entry = sanitizeLibraryEntry({
+      mediaType: 'tv',
+      id: 77,
+      status: 'on_hold',
+      first_air_date: '2020-01-01',
+      watchedEpisodes: { 1: [1, 2] },
+      seasonRatings: { 1: 8 },
+      rating: 8,
+      dateAdded: 789,
+    });
+
+    expect(entry?.status).toBe('watching');
+    expect(entry?.watchedEpisodes).toEqual({ 1: [1, 2] });
+    expect(entry?.seasonRatings).toEqual({ 1: 8 });
+    expect(entry?.rating).toBe(8);
+  });
 });
