@@ -442,7 +442,7 @@ export default function App() {
 
   /* Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ RENDER Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ */
   return (
-    <div className="app-shell max-w-[1180px] mx-auto px-4 md:px-6 pt-5 pb-28 md:pb-12 relative">
+    <div className="app-shell has-fixed-topbar max-w-[1180px] mx-auto px-4 md:px-6 pt-5 pb-28 md:pb-12 relative">
       {/* HEADER */}
       <div className="app-topbar mb-9">
         <button type="button" onClick={() => setActiveTab('catalog')} className="flex items-center gap-3 text-left cursor-pointer">

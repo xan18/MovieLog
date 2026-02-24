@@ -1676,6 +1676,20 @@ html, body { overflow-x: hidden; }
       border-color: rgba(var(--accent-rgb),0.48);
       color: #eff6ff;
     }
+    @media (min-width: 901px) {
+      .app-shell.has-fixed-topbar {
+        padding-top: 112px;
+      }
+      .app-topbar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        margin-left: 0;
+        margin-right: 0;
+      }
+    }
 
     @media (max-width: 900px) {
       .app-topbar { position: static; padding: 0.65rem 16px 0.5rem; }
