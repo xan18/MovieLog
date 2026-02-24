@@ -1,6 +1,182 @@
 import { useCallback, useEffect } from 'react';
 import { tmdbFetchJson, tmdbFetchManyJson } from '../services/tmdb.js';
 
+const PERSON_FILMOGRAPHY_SORT_FALLBACK = '0000-00-00';
+
+const getPersonCreditDate = (item) => item?.release_date || item?.first_air_date || PERSON_FILMOGRAPHY_SORT_FALLBACK;
+
+const normalizePersonRoleGroup = (credit, TMDB_LANG) => {
+  const isRu = String(TMDB_LANG || '').toLowerCase().startsWith('ru');
+  const creditType = credit?.creditType;
+  const job = String(credit?.job || '').trim();
+  const department = String(credit?.department || '').trim();
+
+  if (creditType === 'cast') {
+    return {
+      key: 'acting',
+      label: isRu ? 'Актёр' : 'Acting',
+      order: 0,
+    };
+  }
+
+  if (job === 'Director') {
+    return {
+      key: 'director',
+      label: isRu ? 'Режиссёр' : 'Director',
+      order: 1,
+    };
+  }
+
+  if (/producer/i.test(job)) {
+    return {
+      key: 'producer',
+      label: isRu ? 'Продюсер' : 'Producer',
+      order: 2,
+    };
+  }
+
+  if (job === 'Creator') {
+    return {
+      key: 'creator',
+      label: isRu ? 'Создатель' : 'Creator',
+      order: 3,
+    };
+  }
+
+  if (/(writer|screenplay|story|novel|teleplay|adaptation)/i.test(job) || department === 'Writing') {
+    return {
+      key: 'writer',
+      label: isRu ? 'Сценарист' : 'Writer',
+      order: 4,
+    };
+  }
+
+  if (department === 'Directing') {
+    return {
+      key: 'directing',
+      label: isRu ? 'Постановка' : 'Directing',
+      order: 5,
+    };
+  }
+
+  if (department === 'Production') {
+    return {
+      key: 'production',
+      label: isRu ? 'Производство' : 'Production',
+      order: 6,
+    };
+  }
+
+  if (department === 'Writing') {
+    return {
+      key: 'writing',
+      label: isRu ? 'Сценарий' : 'Writing',
+      order: 7,
+    };
+  }
+
+  if (department === 'Camera') {
+    return {
+      key: 'camera',
+      label: isRu ? 'Операторская работа' : 'Camera',
+      order: 8,
+    };
+  }
+
+  if (department === 'Sound') {
+    return {
+      key: 'sound',
+      label: isRu ? 'Звук' : 'Sound',
+      order: 9,
+    };
+  }
+
+  if (department === 'Editing') {
+    return {
+      key: 'editing',
+      label: isRu ? 'Монтаж' : 'Editing',
+      order: 10,
+    };
+  }
+
+  if (department === 'Art') {
+    return {
+      key: 'art',
+      label: isRu ? 'Арт-отдел' : 'Art',
+      order: 11,
+    };
+  }
+
+  if (department === 'Costume & Make-Up') {
+    return {
+      key: 'costume-makeup',
+      label: isRu ? 'Костюмы и грим' : 'Costume & Make-Up',
+      order: 12,
+    };
+  }
+
+  if (department === 'Visual Effects') {
+    return {
+      key: 'visual-effects',
+      label: isRu ? 'Визуальные эффекты' : 'Visual Effects',
+      order: 13,
+    };
+  }
+
+  if (department === 'Crew') {
+    return {
+      key: 'crew',
+      label: isRu ? 'Съёмочная группа' : 'Crew',
+      order: 14,
+    };
+  }
+
+  const fallbackLabel = job || department || (isRu ? 'Другое' : 'Other');
+  return {
+    key: `other:${fallbackLabel.toLowerCase()}`,
+    label: fallbackLabel,
+    order: 100,
+  };
+};
+
+const sortFilmographyItemsByDate = (a, b) => getPersonCreditDate(b).localeCompare(getPersonCreditDate(a));
+
+const buildPersonFilmographyGroups = (allCredits, TMDB_LANG) => {
+  const groupsMap = new Map();
+
+  allCredits.forEach((credit) => {
+    const roleMeta = normalizePersonRoleGroup(credit, TMDB_LANG);
+    const groupKey = roleMeta.key;
+    const itemKey = `${credit.mediaType}:${credit.id}`;
+
+    if (!groupsMap.has(groupKey)) {
+      groupsMap.set(groupKey, {
+        key: groupKey,
+        label: roleMeta.label,
+        order: roleMeta.order,
+        itemsMap: new Map(),
+      });
+    }
+
+    const group = groupsMap.get(groupKey);
+    const existing = group.itemsMap.get(itemKey);
+
+    if (!existing || getPersonCreditDate(credit) > getPersonCreditDate(existing)) {
+      group.itemsMap.set(itemKey, credit);
+    }
+  });
+
+  return Array.from(groupsMap.values())
+    .map((group) => ({
+      key: group.key,
+      label: group.label,
+      items: Array.from(group.itemsMap.values()).sort(sortFilmographyItemsByDate),
+      order: group.order,
+    }))
+    .sort((a, b) => (a.order - b.order) || (b.items.length - a.items.length) || a.label.localeCompare(b.label))
+    .map(({ order, ...group }) => group);
+};
+
 export function useTmdbDetailsApi({
   library,
   setLibrary,
@@ -230,24 +406,31 @@ export function useTmdbDetailsApi({
         { path: `/person/${personId}/combined_credits`, params: { language: TMDB_LANG } },
       ]);
 
-      const allMovies = (credits.cast || [])
-        .filter((item) => item.media_type === 'movie')
-        .map((item) => ({ ...item, mediaType: 'movie' }));
-      const allTvShows = (credits.cast || [])
-        .filter((item) => item.media_type === 'tv')
-        .map((item) => ({ ...item, mediaType: 'tv' }));
-      const directedMovies = (credits.crew || [])
-        .filter((item) => item.job === 'Director' && item.media_type === 'movie')
-        .map((item) => ({ ...item, mediaType: 'movie' }));
+      const castCredits = (credits?.cast || [])
+        .filter((item) => item?.id && (item.media_type === 'movie' || item.media_type === 'tv'))
+        .map((item) => ({
+          ...item,
+          mediaType: item.media_type,
+          creditType: 'cast',
+        }));
+
+      const crewCredits = (credits?.crew || [])
+        .filter((item) => item?.id && (item.media_type === 'movie' || item.media_type === 'tv'))
+        .map((item) => ({
+          ...item,
+          mediaType: item.media_type,
+          creditType: 'crew',
+        }));
+
+      const allCredits = [...castCredits, ...crewCredits];
+      const filmographyGroups = buildPersonFilmographyGroups(allCredits, TMDB_LANG);
 
       const uniqueContent = Array.from(
         new Map(
-          [...allMovies, ...allTvShows, ...directedMovies]
+          allCredits
             .map((content) => [`${content.mediaType}:${content.id}`, content])
         ).values()
-      ).sort(
-        (a, b) => (b.release_date || b.first_air_date || '').localeCompare(a.release_date || a.first_air_date || '')
-      );
+      ).sort(sortFilmographyItemsByDate);
 
       const moviesInLibrary = uniqueContent
         .map((content) => {
@@ -267,6 +450,7 @@ export function useTmdbDetailsApi({
       setSelectedPerson({
         ...person,
         allMovies: uniqueContent,
+        filmographyGroups,
         moviesInLibrary,
         avgRating: Number.isNaN(Number(avgRating)) ? 0 : avgRating,
       });
