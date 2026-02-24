@@ -37,6 +37,7 @@ export default function App() {
     startTab, setStartTab,
     librarySortDefault, setLibrarySortDefault,
     persistCatalogFilters, setPersistCatalogFilters,
+    autoLoadMoreOnScroll, setAutoLoadMoreOnScroll,
     importMode, setImportMode,
     reducedMotion, setReducedMotion,
     authorModeEnabled, setAuthorModeEnabled,
@@ -556,6 +557,7 @@ export default function App() {
           t={t}
           STATUS_BADGE_CONFIG={STATUS_BADGE_CONFIG}
           addPulseId={addPulseId}
+          autoLoadMoreOnScroll={autoLoadMoreOnScroll}
         />
         </div>
       )}
@@ -575,6 +577,7 @@ export default function App() {
           onCardClick={onCardClick}
           openQuickActions={openQuickActions}
           setActiveTab={setActiveTab}
+          autoLoadMoreOnScroll={autoLoadMoreOnScroll}
         />
         </div>
       )}
@@ -611,6 +614,7 @@ export default function App() {
           openQuickActions={openQuickActions}
           onCardClick={onCardClick}
           STATUS_BADGE_CONFIG={STATUS_BADGE_CONFIG}
+          autoLoadMoreOnScroll={autoLoadMoreOnScroll}
         />
         </div>
       )}
@@ -627,6 +631,7 @@ export default function App() {
           startTab={startTab} setStartTab={setStartTab}
           librarySortDefault={librarySortDefault} setLibrarySortDefault={setLibrarySortDefault}
           persistCatalogFilters={persistCatalogFilters} setPersistCatalogFilters={setPersistCatalogFilters}
+          autoLoadMoreOnScroll={autoLoadMoreOnScroll} setAutoLoadMoreOnScroll={setAutoLoadMoreOnScroll}
           importMode={importMode} setImportMode={setImportMode}
           reducedMotion={reducedMotion} setReducedMotion={setReducedMotion}
           canAuthorMode={canAuthorMode}

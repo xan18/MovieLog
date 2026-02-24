@@ -22,6 +22,7 @@ export default function SettingsView({
   startTab, setStartTab,
   librarySortDefault, setLibrarySortDefault,
   persistCatalogFilters, setPersistCatalogFilters,
+  autoLoadMoreOnScroll, setAutoLoadMoreOnScroll,
   importMode, setImportMode,
   reducedMotion, setReducedMotion,
   canAuthorMode,
@@ -303,6 +304,19 @@ export default function SettingsView({
             <span className="settings-toggle-copy">
               <span className="settings-toggle-title">{t.persistCatalogFiltersLabel}</span>
               <span className="settings-toggle-hint">{t.persistCatalogFiltersHint}</span>
+            </span>
+            <span className="settings-toggle-switch">
+              <span className="settings-toggle-dot" />
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setAutoLoadMoreOnScroll(prev => !prev)}
+            className={`settings-toggle ${autoLoadMoreOnScroll ? 'active' : ''}`}
+          >
+            <span className="settings-toggle-copy">
+              <span className="settings-toggle-title">{t.autoLoadMoreOnScrollLabel || t.loadMore}</span>
+              <span className="settings-toggle-hint">{t.autoLoadMoreOnScrollHint || t.loadMore}</span>
             </span>
             <span className="settings-toggle-switch">
               <span className="settings-toggle-dot" />

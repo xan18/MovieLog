@@ -5,6 +5,7 @@ import { IMG_500 } from '../../constants/appConstants.js';
 import { tmdbFetchJson } from '../../services/tmdb.js';
 import { isReleasedDate } from '../../utils/releaseUtils.js';
 import { useQuickActionGesture } from '../../hooks/useQuickActionGesture.js';
+import { useAutoLoadMoreOnScroll } from '../../hooks/useAutoLoadMoreOnScroll.js';
 
 const pickDisplayTitle = (item, lang) => {
   if (!item) return '';
@@ -60,11 +61,14 @@ export default function LibraryView({
   onCardClick,
   openQuickActions,
   setActiveTab,
+  autoLoadMoreOnScroll,
 }) {
+  const LIBRARY_PAGE_SIZE = 20;
   const [libraryQuery, setLibraryQuery] = React.useState('');
   const [selectedGenre, setSelectedGenre] = React.useState('');
   const [selectedYear, setSelectedYear] = React.useState('');
   const [selectedReleaseFilter, setSelectedReleaseFilter] = React.useState('all');
+  const [visiblePageCount, setVisiblePageCount] = React.useState(1);
   const [genreCatalog, setGenreCatalog] = React.useState([]);
   const genreCacheRef = React.useRef({});
   const TMDB_LANG = lang === 'ru' ? 'ru-RU' : 'en-US';
@@ -216,13 +220,33 @@ export default function LibraryView({
   const hasActiveLocalFilters = Boolean(
     libraryQuery.trim() || selectedGenre || selectedYear || selectedReleaseFilter !== 'all'
   );
+  const targetVisibleCount = visiblePageCount * LIBRARY_PAGE_SIZE;
+  const visibleLibraryItems = filteredShown.slice(0, targetVisibleCount);
+  const canLoadMoreLibraryItems = filteredShown.length > visibleLibraryItems.length;
 
   const resetLocalFilters = () => {
     setLibraryQuery('');
     setSelectedGenre('');
     setSelectedYear('');
     setSelectedReleaseFilter('all');
+    setVisiblePageCount(1);
   };
+
+  React.useEffect(() => {
+    setVisiblePageCount(1);
+  }, [libraryType, shelf, sortBy, libraryQuery, selectedGenre, selectedYear, selectedReleaseFilter]);
+
+  const handleLoadMore = React.useCallback(() => {
+    setVisiblePageCount((prev) => prev + 1);
+  }, []);
+
+  const loadMoreSentinelRef = useAutoLoadMoreOnScroll({
+    enabled: Boolean(autoLoadMoreOnScroll),
+    canLoadMore: canLoadMoreLibraryItems,
+    isLoading: false,
+    itemCount: visibleLibraryItems.length,
+    onLoadMore: handleLoadMore,
+  });
 
   return (
     <div className="view-stack">
@@ -317,7 +341,7 @@ export default function LibraryView({
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        {filteredShown.map((item, i) => {
+        {visibleLibraryItems.map((item, i) => {
           const displayTitle = pickDisplayTitle(item, lang);
           const epProgress = (() => {
             if (item.mediaType !== 'tv') return null;
@@ -406,6 +430,19 @@ export default function LibraryView({
             </button>
           )}
         </div>
+      )}
+
+      {visibleLibraryItems.length > 0 && canLoadMoreLibraryItems && (
+        <>
+          <div ref={loadMoreSentinelRef} className="h-px w-full" aria-hidden="true" />
+          <button
+            type="button"
+            onClick={handleLoadMore}
+            className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-black text-xs uppercase tracking-widest transition-all"
+          >
+            {t.loadMore}
+          </button>
+        </>
       )}
     </div>
   );

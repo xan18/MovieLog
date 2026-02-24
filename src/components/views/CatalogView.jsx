@@ -3,6 +3,7 @@ import { CustomSelect, LazyImg } from '../ui.jsx';
 import { YEARS, getYear } from '../../utils/appUtils.js';
 import { IMG_500 } from '../../constants/appConstants.js';
 import { useQuickActionGesture } from '../../hooks/useQuickActionGesture.js';
+import { useAutoLoadMoreOnScroll } from '../../hooks/useAutoLoadMoreOnScroll.js';
 
 export default function CatalogView({
   // from useCatalog
@@ -28,6 +29,7 @@ export default function CatalogView({
   t,
   STATUS_BADGE_CONFIG,
   addPulseId,
+  autoLoadMoreOnScroll,
 }) {
   const CATALOG_PAGE_SIZE = 20;
   const [requestedPageCount, setRequestedPageCount] = React.useState(1);
@@ -117,6 +119,14 @@ export default function CatalogView({
       setPage((prev) => prev + 1);
     }
   };
+
+  const loadMoreSentinelRef = useAutoLoadMoreOnScroll({
+    enabled: Boolean(autoLoadMoreOnScroll),
+    canLoadMore,
+    isLoading: isCatalogLoading,
+    itemCount: visibleCatalogItems.length,
+    onLoadMore: handleLoadMore,
+  });
 
   const resetCatalogFilters = () => {
     setQuery('');
@@ -291,13 +301,16 @@ export default function CatalogView({
       )}
 
       {visibleCatalogItems.length > 0 && canLoadMore && (
-        <button
-          onClick={handleLoadMore}
-          disabled={isCatalogLoading || !canLoadMore}
-          className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-black text-xs uppercase tracking-widest transition-all disabled:opacity-55 disabled:cursor-not-allowed"
-        >
-          {isCatalogLoading ? (t.loading || t.loadMore) : t.loadMore}
-        </button>
+        <>
+          <div ref={loadMoreSentinelRef} className="h-px w-full" aria-hidden="true" />
+          <button
+            onClick={handleLoadMore}
+            disabled={isCatalogLoading || !canLoadMore}
+            className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-black text-xs uppercase tracking-widest transition-all disabled:opacity-55 disabled:cursor-not-allowed"
+          >
+            {isCatalogLoading ? (t.loading || t.loadMore) : t.loadMore}
+          </button>
+        </>
       )}
     </div>
   );

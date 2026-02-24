@@ -8,6 +8,7 @@ import { supabase } from '../../services/supabase.js';
 import { useDebounce } from '../../hooks/useDebounce.js';
 import { useQuickActionGesture } from '../../hooks/useQuickActionGesture.js';
 import { usePersonalRecommendations } from '../../hooks/usePersonalRecommendations.js';
+import { useAutoLoadMoreOnScroll } from '../../hooks/useAutoLoadMoreOnScroll.js';
 
 const createEmptyDraft = () => ({
   title_ru: '',
@@ -52,6 +53,7 @@ export default function CollectionsView({
   openQuickActions,
   onCardClick,
   STATUS_BADGE_CONFIG,
+  autoLoadMoreOnScroll,
 }) {
   const [collections, setCollections] = useState([]);
   const [collectionsLoading, setCollectionsLoading] = useState(true);
@@ -128,6 +130,13 @@ export default function CollectionsView({
     currentUserId,
     enabled: collectionsSection === 'forYou',
     hiddenVersion: personalRecommendationsHiddenVersion,
+  });
+  const recommendationsLoadMoreSentinelRef = useAutoLoadMoreOnScroll({
+    enabled: Boolean(autoLoadMoreOnScroll) && collectionsSection === 'forYou',
+    canLoadMore: recommendationsHasMore,
+    isLoading: recommendationsLoading,
+    itemCount: visibleRecommendations.length,
+    onLoadMore: showMoreRecommendations,
   });
 
   const visibilityOptions = useMemo(() => ([
@@ -1423,13 +1432,16 @@ export default function CollectionsView({
               </div>
 
               {recommendationsHasMore && (
-                <button
-                  type="button"
-                  onClick={showMoreRecommendations}
-                  className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-black text-xs uppercase tracking-widest transition-all"
-                >
-                  {t.collectionsForYouShowMore}
-                </button>
+                <>
+                  <div ref={recommendationsLoadMoreSentinelRef} className="h-px w-full" aria-hidden="true" />
+                  <button
+                    type="button"
+                    onClick={showMoreRecommendations}
+                    className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-black text-xs uppercase tracking-widest transition-all"
+                  >
+                    {t.collectionsForYouShowMore}
+                  </button>
+                </>
               )}
             </>
           )}

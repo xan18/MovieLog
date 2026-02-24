@@ -5,6 +5,7 @@ const DEFAULT_APP_SETTINGS = {
   startTab: 'catalog',
   librarySortDefault: 'dateAdded',
   persistCatalogFilters: false,
+  autoLoadMoreOnScroll: false,
   importMode: 'replace',
   reducedMotion: false,
   authorModeEnabled: true,
@@ -25,6 +26,9 @@ function readAppSettings() {
     const persistCatalogFilters = typeof parsed?.persistCatalogFilters === 'boolean'
       ? parsed.persistCatalogFilters
       : DEFAULT_APP_SETTINGS.persistCatalogFilters;
+    const autoLoadMoreOnScroll = typeof parsed?.autoLoadMoreOnScroll === 'boolean'
+      ? parsed.autoLoadMoreOnScroll
+      : DEFAULT_APP_SETTINGS.autoLoadMoreOnScroll;
     const importMode = parsed?.importMode === 'merge' ? 'merge' : 'replace';
     const reducedMotion = typeof parsed?.reducedMotion === 'boolean'
       ? parsed.reducedMotion
@@ -37,6 +41,7 @@ function readAppSettings() {
       startTab,
       librarySortDefault,
       persistCatalogFilters,
+      autoLoadMoreOnScroll,
       importMode,
       reducedMotion,
       authorModeEnabled,
@@ -60,6 +65,7 @@ export function useAppSettings() {
   const [startTab, setStartTab] = useState(savedSettings.startTab);
   const [librarySortDefault, setLibrarySortDefault] = useState(savedSettings.librarySortDefault);
   const [persistCatalogFilters, setPersistCatalogFilters] = useState(savedSettings.persistCatalogFilters);
+  const [autoLoadMoreOnScroll, setAutoLoadMoreOnScroll] = useState(savedSettings.autoLoadMoreOnScroll);
   const [importMode, setImportMode] = useState(savedSettings.importMode);
   const [reducedMotion, setReducedMotion] = useState(savedSettings.reducedMotion);
   const [authorModeEnabled, setAuthorModeEnabled] = useState(savedSettings.authorModeEnabled);
@@ -79,6 +85,7 @@ export function useAppSettings() {
       startTab,
       librarySortDefault,
       persistCatalogFilters,
+      autoLoadMoreOnScroll,
       importMode,
       reducedMotion,
       authorModeEnabled,
@@ -88,6 +95,7 @@ export function useAppSettings() {
     startTab,
     librarySortDefault,
     persistCatalogFilters,
+    autoLoadMoreOnScroll,
     importMode,
     reducedMotion,
     authorModeEnabled,
@@ -99,6 +107,7 @@ export function useAppSettings() {
     startTab, setStartTab,
     librarySortDefault, setLibrarySortDefault,
     persistCatalogFilters, setPersistCatalogFilters,
+    autoLoadMoreOnScroll, setAutoLoadMoreOnScroll,
     importMode, setImportMode,
     reducedMotion, setReducedMotion,
     authorModeEnabled, setAuthorModeEnabled,
