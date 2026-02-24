@@ -2349,8 +2349,8 @@ html, body { overflow-x: hidden; }
       to { opacity: 1; transform: translateY(0) scale(1); }
     }
     .card-stagger {
-      animation: cardReveal 0.4s ease-out both;
-      animation-delay: calc(var(--stagger-i, 0) * 40ms);
+      animation: cardReveal 0.28s ease-out both;
+      animation-delay: calc(min(var(--stagger-i, 0), 8) * 18ms);
     }
 
     /* TV progress bar in library */
