@@ -873,7 +873,7 @@ html, body { overflow-x: hidden; }
       transition: opacity 0.2s ease;
       pointer-events: none;
     }
-    .media-card:hover .media-poster::after { opacity: 1; }
+    .media-card:hover .media-poster::after { opacity: 0.75; }
     .media-title {
       font-weight: 700;
       font-size: 1.04rem;
@@ -1063,7 +1063,6 @@ html, body { overflow-x: hidden; }
     }
     .details-hero-overlay {
       background:
-        linear-gradient(180deg, rgba(2, 6, 23, 0.08) 0%, rgba(2, 6, 23, 0.34) 54%, rgba(2, 6, 23, 0.92) 100%),
         linear-gradient(90deg, rgba(2, 6, 23, 0.76) 0%, rgba(2, 6, 23, 0.22) 48%, rgba(2, 6, 23, 0.62) 100%);
     }
     .details-content {
@@ -1429,7 +1428,6 @@ html, body { overflow-x: hidden; }
     }
     .theme-light .details-hero-overlay {
       background:
-        linear-gradient(180deg, rgba(15, 23, 42, 0.0) 0%, rgba(15, 23, 42, 0.18) 58%, rgba(15, 23, 42, 0.62) 100%),
         linear-gradient(90deg, rgba(15, 23, 42, 0.42) 0%, rgba(15, 23, 42, 0.08) 55%, rgba(15, 23, 42, 0.32) 100%);
     }
     .theme-light .details-hero-poster {
@@ -2010,6 +2008,48 @@ html, body { overflow-x: hidden; }
     .theme-light .season-card[open] .season-summary {
       background: rgba(15, 23, 42, 0.05);
     }
+    .theme-dark .season-card {
+      border-color: rgba(255, 255, 255, 0.12);
+      background: linear-gradient(108deg, rgba(44, 44, 44, 0.64), rgba(24, 24, 24, 0.82));
+    }
+    .theme-dark .season-card:hover {
+      border-color: rgba(var(--accent-rgb), 0.34);
+      background: linear-gradient(108deg, rgba(54, 54, 54, 0.74), rgba(30, 30, 30, 0.88));
+      box-shadow: 0 14px 28px rgba(0, 0, 0, 0.28);
+    }
+    .theme-dark .season-card[open] {
+      border-color: rgba(var(--accent-rgb), 0.42);
+      background: linear-gradient(108deg, rgba(60, 60, 60, 0.78), rgba(34, 34, 34, 0.9));
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.34);
+    }
+    .theme-dark .season-poster-wrap {
+      border-right-color: rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .theme-dark .season-card[open] .season-summary {
+      background: rgba(255, 255, 255, 0.025);
+    }
+    .theme-black .season-card {
+      border-color: rgba(255, 255, 255, 0.1);
+      background: linear-gradient(108deg, rgba(10, 10, 10, 0.88), rgba(0, 0, 0, 0.94));
+    }
+    .theme-black .season-card:hover {
+      border-color: rgba(var(--accent-rgb), 0.32);
+      background: linear-gradient(108deg, rgba(18, 18, 18, 0.92), rgba(4, 4, 4, 0.97));
+      box-shadow: 0 14px 28px rgba(0, 0, 0, 0.44);
+    }
+    .theme-black .season-card[open] {
+      border-color: rgba(var(--accent-rgb), 0.4);
+      background: linear-gradient(108deg, rgba(22, 22, 22, 0.94), rgba(6, 6, 6, 0.98));
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.5);
+    }
+    .theme-black .season-poster-wrap {
+      border-right-color: rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .theme-black .season-card[open] .season-summary {
+      background: rgba(255, 255, 255, 0.02);
+    }
 
     .person-filmography-mobile-list {
       display: grid;
@@ -2379,14 +2419,14 @@ html, body { overflow-x: hidden; }
       padding: 12px;
       z-index: 2;
       opacity: 0;
-      background: linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.4) 50%, transparent 100%);
+      background: transparent;
       transition: opacity 0.22s ease;
       pointer-events: none;
     }
     .media-card:hover .card-info-overlay { opacity: 1; }
     .card-info-overlay p { color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
     .theme-light .card-info-overlay {
-      background: linear-gradient(to top, rgba(2,6,23,0.92) 0%, rgba(2,6,23,0.46) 52%, transparent 100%);
+      background: transparent;
     }
     .theme-light .card-info-overlay p {
       color: #f8fafc;
@@ -2877,6 +2917,30 @@ html, body { overflow-x: hidden; }
 
 .theme-light .details-tabs-wrap {
   border-bottom-color: rgba(15, 23, 42, 0.16);
+}
+.theme-dark .details-tabs-wrap {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+.theme-black .details-tabs-wrap {
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+.theme-dark .details-tabs {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: linear-gradient(180deg, rgba(38, 38, 38, 0.82) 0%, rgba(24, 24, 24, 0.74) 100%);
+}
+.theme-black .details-tabs {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: linear-gradient(180deg, rgba(12, 12, 12, 0.9) 0%, rgba(0, 0, 0, 0.86) 100%);
+}
+.theme-dark .details-tab,
+.theme-black .details-tab {
+  color: rgba(245, 245, 245, 0.9);
+}
+.theme-dark .details-tab:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.theme-black .details-tab:hover {
+  background: rgba(255, 255, 255, 0.05);
 }
 .theme-light .details-tabs {
   border-color: rgba(15, 23, 42, 0.24);
