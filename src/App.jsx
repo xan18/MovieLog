@@ -18,6 +18,7 @@ import { isReleasedItem } from './utils/releaseUtils.js';
 import { sanitizeLibraryData } from './utils/librarySanitizer.js';
 import {
   buildTvWatchedEpisodesForCompletion,
+  getTvProgressSnapshot,
   resolveTvProgressStatus,
 } from './utils/tvStatusUtils.js';
 import { STORAGE_KEY } from './constants/appConstants.js';
@@ -351,6 +352,12 @@ export default function App() {
   }, [shelf, sortBy]);
 
   useEffect(() => {
+    if (libraryType === 'movie' && sortBy === 'remainingEpisodes') {
+      setSortBy('dateAdded');
+    }
+  }, [libraryType, sortBy]);
+
+  useEffect(() => {
     setSortBy(librarySortDefault);
   }, [librarySortDefault]);
 
@@ -532,6 +539,21 @@ export default function App() {
   const compareByImdbRating = (a, b) => ((b.vote_average || 0) - (a.vote_average || 0)) || compareByDateAdded(a, b);
   const compareByMyRating = (a, b) => ((b.rating || 0) - (a.rating || 0)) || compareByDateAdded(a, b);
   const compareByReleaseYear = (a, b) => (getReleaseYear(b) - getReleaseYear(a)) || compareByDateAdded(a, b);
+  const getRemainingEpisodesSortValue = (item) => {
+    if (item?.mediaType !== 'tv') return Number.POSITIVE_INFINITY;
+    const snapshot = getTvProgressSnapshot(item.watchedEpisodes || {}, item);
+    if ((snapshot?.targetEpisodes || 0) <= 0) return Number.POSITIVE_INFINITY;
+    return Number(snapshot.remainingToTarget) || 0;
+  };
+  const compareByRemainingEpisodes = (a, b) => {
+    const aValue = getRemainingEpisodesSortValue(a);
+    const bValue = getRemainingEpisodesSortValue(b);
+    const aKnown = Number.isFinite(aValue);
+    const bKnown = Number.isFinite(bValue);
+    if (aKnown !== bKnown) return aKnown ? -1 : 1;
+    if (!aKnown && !bKnown) return compareByDateAdded(a, b);
+    return (bValue - aValue) || compareByDateAdded(a, b);
+  };
 
   const shownMovies = useMemo(() => {
     let arr = library.filter(x => x.mediaType === 'movie' && (shelf === 'all' || x.status === shelf));
@@ -547,6 +569,7 @@ export default function App() {
     if (sortBy === 'imdbRating') arr.sort(compareByImdbRating);
     else if (sortBy === 'myRating') arr.sort(compareByMyRating);
     else if (sortBy === 'releaseYear') arr.sort(compareByReleaseYear);
+    else if (sortBy === 'remainingEpisodes') arr.sort(compareByRemainingEpisodes);
     else arr.sort(compareByDateAdded);
     return arr;
   }, [library, shelf, sortBy]);

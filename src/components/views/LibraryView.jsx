@@ -153,9 +153,12 @@ export default function LibraryView({
   const sortOptions = React.useMemo(() => ([
     { value: 'imdbRating', label: t.byImdbRating },
     ...(canSortByMyRating ? [{ value: 'myRating', label: t.byMyRating }] : []),
+    ...(libraryType === 'tv'
+      ? [{ value: 'remainingEpisodes', label: t.byRemainingEpisodes || 'By remaining episodes' }]
+      : []),
     { value: 'dateAdded', label: t.byDateAdded },
     { value: 'releaseYear', label: t.byReleaseYear },
-  ]), [canSortByMyRating, t.byDateAdded, t.byImdbRating, t.byMyRating, t.byReleaseYear]);
+  ]), [canSortByMyRating, libraryType, t.byDateAdded, t.byImdbRating, t.byMyRating, t.byReleaseYear, t.byRemainingEpisodes]);
 
   const statusOptions = React.useMemo(() => ([
     {
