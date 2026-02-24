@@ -12,6 +12,7 @@ import { useModalHistory } from './hooks/useModalHistory.js';
 import { useStatsSelectors } from './hooks/useStatsSelectors.js';
 import { isSupabaseConfigured, supabase } from './services/supabase.js';
 import { tmdbFetchManyJson } from './services/tmdb.js';
+import { hidePersonalRecommendationForUser } from './services/personalRecommendations.js';
 import { getMovieStatuses, getTvStatuses, getStatusBadgeConfig, getTvShowStatusMap, getCrewRoleMap } from './utils/statusConfig.js';
 import { isReleasedItem } from './utils/releaseUtils.js';
 import { sanitizeLibraryData } from './utils/librarySanitizer.js';
@@ -76,6 +77,7 @@ export default function App() {
   const [seasonEpisodes, setSeasonEpisodes] = useState({});
   const [loadingSeason, setLoadingSeason] = useState(null);
   const [quickActions, setQuickActions] = useState(null);
+  const [personalRecommendationsHiddenVersion, setPersonalRecommendationsHiddenVersion] = useState(0);
   const [confirmClear, setConfirmClear] = useState(false);
   const [closingDetails, setClosingDetails] = useState(false);
   const [closingPerson, setClosingPerson] = useState(false);
@@ -318,19 +320,30 @@ export default function App() {
   }, []);
 
   /* Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Context menu Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ */
-  const openQuickActions = useCallback((item, x, y) => {
+  const openQuickActions = useCallback((item, x, y, options = {}) => {
+    const showHideFromForYou = Boolean(options.showHideFromForYou);
     const menuWidth = 240;
-    const menuHeight = item.mediaType === 'movie' ? 240 : 330;
+    const menuHeight = item.mediaType === 'movie' ? 300 : 390;
     const viewW = window.innerWidth;
     const viewH = window.innerHeight;
     const clampedX = Math.max(12, Math.min(x, viewW - menuWidth - 12));
     const clampedY = Math.max(12, Math.min(y, viewH - menuHeight - 12));
-    setQuickActions({ item, x: clampedX, y: clampedY });
+    setQuickActions({ item, x: clampedX, y: clampedY, showHideFromForYou });
   }, []);
 
   const onCardClick = (item) => {
     getFullDetails(item);
   };
+
+  const notifyPersonalRecommendationsHiddenChanged = useCallback(() => {
+    setPersonalRecommendationsHiddenVersion((prev) => prev + 1);
+  }, []);
+
+  const hideFromForYouRecommendations = useCallback((item) => {
+    const changed = hidePersonalRecommendationForUser(currentUserId || 'anonymous', item?.mediaType, item?.id);
+    if (changed) notifyPersonalRecommendationsHiddenChanged();
+    setQuickActions(null);
+  }, [currentUserId, notifyPersonalRecommendationsHiddenChanged]);
 
   const hydrateQuickAddedItemForPeopleStats = useCallback(async (item) => {
     if (!item?.id || !item?.mediaType) return;
@@ -593,6 +606,7 @@ export default function App() {
           isAuthor={isAuthor}
           authorModeEnabled={authorModeEnabled}
           setAuthorModeEnabled={setAuthorModeEnabled}
+          personalRecommendationsHiddenVersion={personalRecommendationsHiddenVersion}
           getLibraryEntry={getLibraryEntry}
           openQuickActions={openQuickActions}
           onCardClick={onCardClick}
@@ -606,6 +620,7 @@ export default function App() {
         <div className="tab-enter" key="tab-settings">
         <SettingsView
           library={library} setLibrary={setLibrary}
+          currentUserId={currentUserId}
           t={t}
           theme={theme} setTheme={setTheme}
           lang={lang} setLang={setLang}
@@ -618,6 +633,9 @@ export default function App() {
           authorModeEnabled={authorModeEnabled}
           setAuthorModeEnabled={setAuthorModeEnabled}
           confirmClear={confirmClear} setConfirmClear={setConfirmClear}
+          personalRecommendationsHiddenVersion={personalRecommendationsHiddenVersion}
+          onPersonalRecommendationsHiddenChanged={notifyPersonalRecommendationsHiddenChanged}
+          onCardClick={onCardClick}
         />
         </div>
       )}
@@ -645,6 +663,7 @@ export default function App() {
         getLibraryEntry={getLibraryEntry}
         applyQuickMovieAction={applyQuickMovieAction}
         applyQuickTvAction={applyQuickTvAction}
+        hideFromForYouRecommendations={hideFromForYouRecommendations}
         removeFromLibrary={removeFromLibrary}
       />
 

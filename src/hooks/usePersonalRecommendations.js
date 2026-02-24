@@ -8,8 +8,10 @@ import {
   buildPersonalRecommendations,
   buildPersonalRecommendationsCacheKey,
   clearPersonalRecommendationsCache,
+  getPersonalRecommendationKey,
   mapWithConcurrency,
   pickRecommendationSeeds,
+  readHiddenPersonalRecommendationKeys,
   readPersonalRecommendationsCache,
   writePersonalRecommendationsCache,
 } from '../services/personalRecommendations.js';
@@ -24,6 +26,7 @@ export function usePersonalRecommendations({
   maxResults = PERSONAL_RECOMMENDATIONS_MAX_RESULTS,
   pageSize = PERSONAL_RECOMMENDATIONS_PAGE_SIZE,
   cacheTtlMs = PERSONAL_RECOMMENDATIONS_CACHE_TTL_MS,
+  hiddenVersion = 0,
 }) {
   const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -41,6 +44,10 @@ export function usePersonalRecommendations({
     language: tmdbLanguage,
     libraryFingerprint,
   }), [currentUserId, libraryFingerprint, tmdbLanguage]);
+  const hiddenRecommendationKeySet = useMemo(
+    () => new Set(readHiddenPersonalRecommendationKeys(currentUserId || 'anonymous')),
+    [currentUserId, hiddenVersion]
+  );
 
   useEffect(() => {
     setVisibleCount(pageSize);
@@ -132,20 +139,28 @@ export function usePersonalRecommendations({
     tmdbLanguage,
   ]);
 
+  const filteredRecommendations = useMemo(
+    () => recommendations.filter((item) => {
+      const key = getPersonalRecommendationKey(item?.mediaType, item?.id);
+      if (!key) return true;
+      return !hiddenRecommendationKeySet.has(key);
+    }),
+    [hiddenRecommendationKeySet, recommendations]
+  );
   const visibleRecommendations = useMemo(
-    () => recommendations.slice(0, visibleCount),
-    [recommendations, visibleCount]
+    () => filteredRecommendations.slice(0, visibleCount),
+    [filteredRecommendations, visibleCount]
   );
 
-  const hasMore = visibleCount < recommendations.length;
+  const hasMore = visibleCount < filteredRecommendations.length;
 
   const showMore = useCallback(() => {
-    setVisibleCount((prev) => Math.min(prev + pageSize, recommendations.length));
-  }, [pageSize, recommendations.length]);
+    setVisibleCount((prev) => Math.min(prev + pageSize, filteredRecommendations.length));
+  }, [pageSize, filteredRecommendations.length]);
 
   return {
     seedCount,
-    recommendations,
+    recommendations: filteredRecommendations,
     visibleRecommendations,
     loading,
     error,

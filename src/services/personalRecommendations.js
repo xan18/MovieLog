@@ -4,6 +4,7 @@ export const PERSONAL_RECOMMENDATIONS_PAGE_SIZE = 20;
 export const PERSONAL_RECOMMENDATIONS_CACHE_TTL_MS = 10 * 60 * 1000;
 
 const CACHE_PREFIX = 'movielog:personal-recommendations:v1';
+const HIDDEN_PREFIX = 'movielog:personal-recommendations:hidden:v1';
 
 const normalizeMediaType = (mediaType) => {
   if (mediaType === 'movie' || mediaType === 'tv') return mediaType;
@@ -55,6 +56,106 @@ export const getPersonalRecommendationKey = (mediaType, id) => {
   const normalizedId = normalizeId(id);
   if (!normalizedMediaType || normalizedId === 0) return '';
   return `${normalizedMediaType}-${normalizedId}`;
+};
+
+export const parsePersonalRecommendationKey = (key) => {
+  const value = String(key || '').trim();
+  const match = /^((movie)|(tv))-(\d+)$/.exec(value);
+  if (!match) return null;
+  const mediaType = match[1];
+  const id = Number(match[4]);
+  if (!mediaType || !Number.isFinite(id) || id <= 0) return null;
+  return { key: value, mediaType, id };
+};
+
+const buildHiddenRecommendationsStorageKey = (userId) => {
+  const normalizedUserId = String(userId || 'anonymous').trim() || 'anonymous';
+  return `${HIDDEN_PREFIX}:${normalizedUserId}`;
+};
+
+export const readHiddenPersonalRecommendationKeys = (userId) => {
+  if (typeof window === 'undefined' || !window.localStorage) return [];
+
+  const storageKey = buildHiddenRecommendationsStorageKey(userId);
+  try {
+    const rawValue = window.localStorage.getItem(storageKey);
+    if (!rawValue) return [];
+
+    const parsed = JSON.parse(rawValue);
+    if (!Array.isArray(parsed)) {
+      window.localStorage.removeItem(storageKey);
+      return [];
+    }
+
+    const normalizedUnique = Array.from(new Set(
+      parsed
+        .map((value) => String(value || '').trim())
+        .filter((value) => /^((movie)|(tv))-\d+$/.test(value))
+    ));
+
+    if (normalizedUnique.length !== parsed.length) {
+      window.localStorage.setItem(storageKey, JSON.stringify(normalizedUnique));
+    }
+
+    return normalizedUnique;
+  } catch {
+    try {
+      window.localStorage.removeItem(storageKey);
+    } catch {
+      // ignore
+    }
+    return [];
+  }
+};
+
+export const hidePersonalRecommendationForUser = (userId, mediaType, id) => {
+  if (typeof window === 'undefined' || !window.localStorage) return false;
+
+  const recommendationKey = getPersonalRecommendationKey(mediaType, id);
+  if (!recommendationKey) return false;
+
+  const storageKey = buildHiddenRecommendationsStorageKey(userId);
+  const currentKeys = readHiddenPersonalRecommendationKeys(userId);
+  if (currentKeys.includes(recommendationKey)) return false;
+
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify([...currentKeys, recommendationKey]));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const unhidePersonalRecommendationForUser = (userId, mediaType, id) => {
+  if (typeof window === 'undefined' || !window.localStorage) return false;
+
+  const recommendationKey = getPersonalRecommendationKey(mediaType, id);
+  if (!recommendationKey) return false;
+
+  const storageKey = buildHiddenRecommendationsStorageKey(userId);
+  const currentKeys = readHiddenPersonalRecommendationKeys(userId);
+  if (!currentKeys.includes(recommendationKey)) return false;
+
+  const nextKeys = currentKeys.filter((key) => key !== recommendationKey);
+  try {
+    if (nextKeys.length === 0) window.localStorage.removeItem(storageKey);
+    else window.localStorage.setItem(storageKey, JSON.stringify(nextKeys));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const clearHiddenPersonalRecommendationsForUser = (userId) => {
+  if (typeof window === 'undefined' || !window.localStorage) return false;
+  const storageKey = buildHiddenRecommendationsStorageKey(userId);
+  try {
+    const hadAny = Boolean(window.localStorage.getItem(storageKey));
+    window.localStorage.removeItem(storageKey);
+    return hadAny;
+  } catch {
+    return false;
+  }
 };
 
 export const pickRecommendationSeeds = (library = []) => {

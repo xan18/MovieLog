@@ -9,9 +9,11 @@ export default function QuickActionsMenu({
   getLibraryEntry,
   applyQuickMovieAction,
   applyQuickTvAction,
+  hideFromForYouRecommendations,
   removeFromLibrary,
 }) {
   if (!quickActions) return null;
+  const canHideFromRecommendations = Boolean(quickActions.showHideFromForYou && hideFromForYouRecommendations);
 
   return (
     <div className="fixed inset-0 z-[210] popup-enter" onClick={() => setQuickActions(null)}>
@@ -44,6 +46,14 @@ export default function QuickActionsMenu({
                 {t.delete}
               </button>
             )}
+            {canHideFromRecommendations && (
+              <button
+                onClick={() => hideFromForYouRecommendations?.(quickActions.item)}
+                className="w-full text-left px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold uppercase tracking-wide"
+              >
+                {t.quickActionHideFromForYou || t.collectionsForYouTab}
+              </button>
+            )}
             {!isReleasedItem(quickActions.item) && (
               <p className="text-[10px] px-1 opacity-60">{t.unreleasedLocked}</p>
             )}
@@ -66,6 +76,14 @@ export default function QuickActionsMenu({
                 className="w-full text-left px-3 py-2 rounded-xl bg-red-600/15 hover:bg-red-600/25 border border-red-500/30 text-xs font-bold uppercase tracking-wide"
               >
                 {t.delete}
+              </button>
+            )}
+            {canHideFromRecommendations && (
+              <button
+                onClick={() => hideFromForYouRecommendations?.(quickActions.item)}
+                className="w-full text-left px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold uppercase tracking-wide"
+              >
+                {t.quickActionHideFromForYou || t.collectionsForYouTab}
               </button>
             )}
           </div>

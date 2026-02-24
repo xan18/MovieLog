@@ -47,6 +47,7 @@ export default function CollectionsView({
   isAuthor,
   authorModeEnabled,
   setAuthorModeEnabled,
+  personalRecommendationsHiddenVersion,
   getLibraryEntry,
   openQuickActions,
   onCardClick,
@@ -84,6 +85,9 @@ export default function CollectionsView({
   const collectionSearchInputRef = useRef(null);
 
   const TMDB_LANG = lang === 'ru' ? 'ru-RU' : 'en-US';
+  const openRecommendationQuickActions = useCallback((item, x, y) => {
+    openQuickActions(item, x, y, { showHideFromForYou: true });
+  }, [openQuickActions]);
   const {
     onContextMenu,
     onTouchStart,
@@ -92,9 +96,21 @@ export default function CollectionsView({
     onTouchCancel,
     consumeLongPress,
   } = useQuickActionGesture(openQuickActions);
+  const {
+    onContextMenu: onRecommendationContextMenu,
+    onTouchStart: onRecommendationTouchStart,
+    onTouchMove: onRecommendationTouchMove,
+    onTouchEnd: onRecommendationTouchEnd,
+    onTouchCancel: onRecommendationTouchCancel,
+    consumeLongPress: consumeRecommendationLongPress,
+  } = useQuickActionGesture(openRecommendationQuickActions);
 
   const handleCardClick = (item) => {
     if (consumeLongPress()) return;
+    onCardClick(item);
+  };
+  const handleRecommendationCardClick = (item) => {
+    if (consumeRecommendationLongPress()) return;
     onCardClick(item);
   };
 
@@ -111,6 +127,7 @@ export default function CollectionsView({
     lang,
     currentUserId,
     enabled: collectionsSection === 'forYou',
+    hiddenVersion: personalRecommendationsHiddenVersion,
   });
 
   const visibilityOptions = useMemo(() => ([
@@ -1354,12 +1371,12 @@ export default function CollectionsView({
                   return (
                     <div
                       key={`recommendation-${item.mediaType}-${item.id}`}
-                      onClick={() => handleCardClick(item)}
-                      onContextMenu={(event) => onContextMenu(event, item)}
-                      onTouchStart={(event) => onTouchStart(event, item)}
-                      onTouchMove={onTouchMove}
-                      onTouchEnd={onTouchEnd}
-                      onTouchCancel={onTouchCancel}
+                      onClick={() => handleRecommendationCardClick(item)}
+                      onContextMenu={(event) => onRecommendationContextMenu(event, item)}
+                      onTouchStart={(event) => onRecommendationTouchStart(event, item)}
+                      onTouchMove={onRecommendationTouchMove}
+                      onTouchEnd={onRecommendationTouchEnd}
+                      onTouchCancel={onRecommendationTouchCancel}
                       className="media-card group cursor-pointer"
                     >
                       <div className="media-poster">
@@ -1381,7 +1398,7 @@ export default function CollectionsView({
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
-                            openQuickActions(item, event.clientX, event.clientY);
+                            openQuickActions(item, event.clientX, event.clientY, { showHideFromForYou: true });
                           }}
                           className="quick-action-trigger"
                           aria-label={t.quickActions}

@@ -1,11 +1,21 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { CustomSelect } from '../ui.jsx';
+import { CustomSelect, LazyImg } from '../ui.jsx';
+import { IMG_500 } from '../../constants/appConstants.js';
 import { sanitizeLibraryData } from '../../utils/librarySanitizer.js';
 import { readJsonFileWithFallback } from '../../utils/importUtils.js';
 import { getLanguageOptions, getThemeOptions } from '../../utils/uiOptions.js';
+import { getYear } from '../../utils/appUtils.js';
+import {
+  clearHiddenPersonalRecommendationsForUser,
+  parsePersonalRecommendationKey,
+  readHiddenPersonalRecommendationKeys,
+  unhidePersonalRecommendationForUser,
+} from '../../services/personalRecommendations.js';
+import { tmdbFetchJson } from '../../services/tmdb.js';
 
 export default function SettingsView({
   library, setLibrary,
+  currentUserId,
   t,
   theme, setTheme,
   lang, setLang,
@@ -17,12 +27,20 @@ export default function SettingsView({
   canAuthorMode,
   authorModeEnabled, setAuthorModeEnabled,
   confirmClear, setConfirmClear,
+  personalRecommendationsHiddenVersion,
+  onPersonalRecommendationsHiddenChanged,
+  onCardClick,
 }) {
   const LANGUAGE_OPTIONS = getLanguageOptions(t);
   const THEME_OPTIONS = getThemeOptions(t);
 
   const [notice, setNotice] = useState(null);
   const [pendingImport, setPendingImport] = useState(null);
+  const [hiddenForYouKeys, setHiddenForYouKeys] = useState([]);
+  const [isHiddenForYouModalOpen, setHiddenForYouModalOpen] = useState(false);
+  const [hiddenForYouModalItems, setHiddenForYouModalItems] = useState([]);
+  const [hiddenForYouModalLoading, setHiddenForYouModalLoading] = useState(false);
+  const [hiddenForYouModalError, setHiddenForYouModalError] = useState('');
   const noticeTimerRef = useRef(null);
 
   const START_TAB_OPTIONS = useMemo(() => ([
@@ -55,7 +73,122 @@ export default function SettingsView({
     if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
   }, []);
 
+  useEffect(() => {
+    setHiddenForYouKeys(readHiddenPersonalRecommendationKeys(currentUserId || 'anonymous'));
+  }, [currentUserId, personalRecommendationsHiddenVersion]);
+
   const getItemKey = (item) => `${item.mediaType}-${item.id}`;
+
+  const hiddenForYouItems = useMemo(() => (
+    hiddenForYouKeys
+      .map((key) => parsePersonalRecommendationKey(key))
+      .filter(Boolean)
+  ), [hiddenForYouKeys]);
+
+  const hiddenForYouModalTitle = useMemo(
+    () => t.forYouHiddenModalTitle || t.forYouHiddenListTitle || t.collectionsForYouTab,
+    [t]
+  );
+
+  useEffect(() => {
+    if (!isHiddenForYouModalOpen) return;
+    const onEsc = (event) => {
+      if (event.key === 'Escape') setHiddenForYouModalOpen(false);
+    };
+    window.addEventListener('keydown', onEsc);
+    return () => window.removeEventListener('keydown', onEsc);
+  }, [isHiddenForYouModalOpen]);
+
+  useEffect(() => {
+    if (!isHiddenForYouModalOpen) return;
+    if (hiddenForYouItems.length === 0) {
+      setHiddenForYouModalItems([]);
+      setHiddenForYouModalLoading(false);
+      setHiddenForYouModalError('');
+      return;
+    }
+
+    let cancelled = false;
+    const tmdbLanguage = lang === 'ru' ? 'ru-RU' : 'en-US';
+
+    const loadHiddenRecommendationDetails = async () => {
+      setHiddenForYouModalLoading(true);
+      setHiddenForYouModalError('');
+
+      try {
+        const resolvedItems = await Promise.all(hiddenForYouItems.map(async (entry) => {
+          try {
+            const detail = await tmdbFetchJson(`/${entry.mediaType}/${entry.id}`, { language: tmdbLanguage });
+            if (detail?.id) {
+              return {
+                ...detail,
+                mediaType: entry.mediaType,
+                _hiddenKey: entry.key,
+              };
+            }
+          } catch {
+            // fall through to fallback object
+          }
+
+          return {
+            id: entry.id,
+            mediaType: entry.mediaType,
+            title: `TMDB #${entry.id}`,
+            name: `TMDB #${entry.id}`,
+            poster_path: null,
+            vote_average: 0,
+            _hiddenKey: entry.key,
+          };
+        }));
+
+        if (cancelled) return;
+        setHiddenForYouModalItems(resolvedItems);
+      } catch (error) {
+        if (cancelled) return;
+        console.error('Failed to load hidden for-you recommendation details', error);
+        setHiddenForYouModalItems([]);
+        setHiddenForYouModalError(t.forYouHiddenLoadError || t.networkError);
+      } finally {
+        if (!cancelled) setHiddenForYouModalLoading(false);
+      }
+    };
+
+    loadHiddenRecommendationDetails();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hiddenForYouItems, isHiddenForYouModalOpen, lang, t.forYouHiddenLoadError, t.networkError]);
+
+  const handleHiddenForYouCardClick = (item) => {
+    if (!onCardClick) return;
+    setHiddenForYouModalOpen(false);
+    onCardClick(item);
+  };
+
+  const restoreHiddenForYouItem = (entry) => {
+    if (!entry?.mediaType || !entry?.id) return;
+    const changed = unhidePersonalRecommendationForUser(
+      currentUserId || 'anonymous',
+      entry.mediaType,
+      entry.id
+    );
+    if (!changed) return;
+
+    setHiddenForYouKeys((prev) => prev.filter((key) => key !== entry.key));
+    setHiddenForYouModalItems((prev) => prev.filter((item) => item._hiddenKey !== entry.key));
+    onPersonalRecommendationsHiddenChanged?.();
+    showNotice('success', t.forYouHiddenRestoreOneDone || t.fileSaved);
+  };
+
+  const restoreAllHiddenForYou = () => {
+    const hadAny = clearHiddenPersonalRecommendationsForUser(currentUserId || 'anonymous');
+    if (!hadAny) return;
+    setHiddenForYouKeys([]);
+    setHiddenForYouModalItems([]);
+    onPersonalRecommendationsHiddenChanged?.();
+    showNotice('success', t.forYouHiddenRestoreAllDone || t.fileSaved);
+  };
 
   const computeImportPreview = (incomingItems) => {
     const currentMap = new Map(library.map(item => [getItemKey(item), item]));
@@ -201,6 +334,36 @@ export default function SettingsView({
               <span className="settings-toggle-switch">
                 <span className="settings-toggle-dot" />
               </span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="glass app-panel">
+        <div className="settings-section-head p-5 border-b border-white/5"><p className="text-sm font-black">{t.forYouSettingsTitle || t.collectionsForYouTab}</p></div>
+        <div className="p-5 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-widest opacity-50">{t.forYouHiddenListTitle || t.collectionsForYouTab}</p>
+              <p className="text-xs opacity-55 mt-1">{t.forYouHiddenListHint || t.collectionsForYouEmptyHint}</p>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-xl font-black">{hiddenForYouItems.length}</p>
+              <p className="text-[10px] opacity-45 uppercase tracking-widest">{t.total}</p>
+            </div>
+          </div>
+
+          {hiddenForYouItems.length === 0 ? (
+            <div className="settings-preview-box">
+              <p className="text-xs opacity-65">{t.forYouHiddenListEmpty || t.empty}</p>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setHiddenForYouModalOpen(true)}
+              className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-black text-xs uppercase tracking-widest transition-all"
+            >
+              {t.forYouHiddenManageOpen || t.forYouHiddenListTitle || t.collectionsForYouTab}
             </button>
           )}
         </div>
@@ -369,6 +532,136 @@ export default function SettingsView({
           <div className="pt-3 border-t border-white/5"><p className="text-[10px] opacity-30 text-center leading-relaxed">{t.aboutText}</p></div>
         </div>
       </div>
+
+      {isHiddenForYouModalOpen && (
+        <div className="fixed inset-0 z-[220] flex items-center justify-center p-4" onClick={() => setHiddenForYouModalOpen(false)}>
+          <div className="absolute inset-0 modal-overlay" />
+          <div
+            className="relative w-full max-w-6xl max-h-[90vh] overflow-y-auto glass app-panel-padded p-4 md:p-5 space-y-4"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-50 mb-2">{t.forYouSettingsTitle || t.collectionsForYouTab}</p>
+                <h3 className="text-xl md:text-2xl font-black leading-tight">{hiddenForYouModalTitle}</h3>
+                <p className="text-xs opacity-60 mt-1">{t.forYouHiddenListHint || t.collectionsForYouEmptyHint}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHiddenForYouModalOpen(false)}
+                className="collections-modal-close"
+                aria-label={t.close}
+                title={t.close}
+              >
+                {'\u2715'}
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+              <p className="text-xs opacity-65">{t.forYouHiddenListTitle || t.collectionsForYouTab}</p>
+              <p className="text-sm font-black">{hiddenForYouItems.length}</p>
+            </div>
+
+            {hiddenForYouModalError && (
+              <div className="rounded-xl border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                {hiddenForYouModalError}
+              </div>
+            )}
+
+            {hiddenForYouModalLoading && (
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {Array.from({ length: Math.min(Math.max(hiddenForYouItems.length, 4), 10) }).map((_, index) => (
+                  <div key={`hidden-for-you-skeleton-${index}`} className="media-card">
+                    <div className="media-poster catalog-skeleton-poster">
+                      <div className="catalog-skeleton-shimmer" />
+                    </div>
+                    <div className="catalog-skeleton-line" style={{ width: '88%' }} />
+                    <div className="catalog-skeleton-line" style={{ width: '46%' }} />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!hiddenForYouModalLoading && hiddenForYouModalItems.length === 0 && (
+              <div className="empty-state compact">
+                <div className="empty-state-icon" aria-hidden="true">{'\u2728'}</div>
+                <p className="empty-state-title">{t.forYouHiddenListEmpty || t.empty}</p>
+                <p className="empty-state-hint">{t.forYouHiddenListHint || t.collectionsForYouEmptyHint}</p>
+              </div>
+            )}
+
+            {!hiddenForYouModalLoading && hiddenForYouModalItems.length > 0 && (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                  {hiddenForYouModalItems.map((item, index) => {
+                    const title = item.title || item.name || `TMDB #${item.id}`;
+                    const year = getYear(item);
+                    const genre = (item.genres?.[0]?.name || '');
+                    const mediaTypeLabel = item.mediaType === 'movie' ? t.movies : t.tvShows;
+                    const restoreEntry = { key: item._hiddenKey, mediaType: item.mediaType, id: item.id };
+
+                    return (
+                      <div
+                        key={item._hiddenKey || `${item.mediaType}-${item.id}`}
+                        onClick={() => handleHiddenForYouCardClick(item)}
+                        className="media-card group cursor-pointer card-stagger"
+                        style={{ '--stagger-i': index }}
+                      >
+                        <div className="media-poster">
+                          <LazyImg
+                            src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'}
+                            className="w-full aspect-[2/3] object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+                            alt={title}
+                          />
+                          <div className="media-pill absolute top-2 left-2 bg-white/85 text-black">
+                            {mediaTypeLabel}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              restoreHiddenForYouItem(restoreEntry);
+                            }}
+                            className="media-pill absolute top-2 right-2 bg-white/85 text-black hover:bg-white transition-all"
+                            aria-label={t.forYouHiddenRestoreOne || t.cancel}
+                            title={t.forYouHiddenRestoreOne || t.cancel}
+                          >
+                            {t.forYouHiddenRestoreOne || t.cancel}
+                          </button>
+                          <div className="card-info-overlay">
+                            {item.vote_average > 0 && <p className="text-xs font-bold mb-0.5">{'\u2605'} {item.vote_average.toFixed(1)}</p>}
+                            {genre && <p className="text-[10px] font-medium opacity-80">{genre}</p>}
+                            {year && <p className="text-[10px] font-normal opacity-60">{year}</p>}
+                          </div>
+                        </div>
+                        <h3 className="media-title line-clamp-2">{title}</h3>
+                        <p className="media-meta">{year}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={restoreAllHiddenForYou}
+                    className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-black text-xs uppercase tracking-widest transition-all"
+                  >
+                    {t.forYouHiddenRestoreAll || t.resetCatalogFilters || t.cancel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHiddenForYouModalOpen(false)}
+                    className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-black text-xs uppercase tracking-widest transition-all"
+                  >
+                    {t.close}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
