@@ -251,9 +251,9 @@ export default function App() {
   // Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Shelf validation on libraryType change Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ
   useEffect(() => {
     if (libraryType === 'movie') {
-      if (!['planned', 'completed'].includes(shelf)) setShelf('planned');
+      if (!['all', 'planned', 'completed'].includes(shelf)) setShelf('planned');
     } else {
-      if (!['watching', 'planned', 'completed', 'dropped', 'on_hold'].includes(shelf)) setShelf('watching');
+      if (!['all', 'watching', 'planned', 'completed', 'dropped', 'on_hold'].includes(shelf)) setShelf('watching');
     }
   }, [libraryType]);
 
@@ -438,7 +438,7 @@ export default function App() {
   const compareByReleaseYear = (a, b) => (getReleaseYear(b) - getReleaseYear(a)) || compareByDateAdded(a, b);
 
   const shownMovies = useMemo(() => {
-    let arr = library.filter(x => x.mediaType === 'movie' && x.status === shelf);
+    let arr = library.filter(x => x.mediaType === 'movie' && (shelf === 'all' || x.status === shelf));
     if (sortBy === 'imdbRating') arr.sort(compareByImdbRating);
     else if (sortBy === 'myRating') arr.sort(compareByMyRating);
     else if (sortBy === 'releaseYear') arr.sort(compareByReleaseYear);
@@ -447,7 +447,7 @@ export default function App() {
   }, [library, shelf, sortBy]);
 
   const shownTv = useMemo(() => {
-    let arr = library.filter(x => x.mediaType === 'tv' && x.status === shelf);
+    let arr = library.filter(x => x.mediaType === 'tv' && (shelf === 'all' || x.status === shelf));
     if (sortBy === 'imdbRating') arr.sort(compareByImdbRating);
     else if (sortBy === 'myRating') arr.sort(compareByMyRating);
     else if (sortBy === 'releaseYear') arr.sort(compareByReleaseYear);

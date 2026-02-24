@@ -134,15 +134,19 @@ export default function LibraryView({
     { value: 'releaseYear', label: t.byReleaseYear },
   ]), [canSortByMyRating, t.byDateAdded, t.byImdbRating, t.byMyRating, t.byReleaseYear]);
 
-  const statusOptions = React.useMemo(() => (
-    mediaTypeStatuses.map((status) => {
+  const statusOptions = React.useMemo(() => ([
+    {
+      value: 'all',
+      label: `${t.releaseAll} (${mediaTypeLibraryItems.length})`,
+    },
+    ...mediaTypeStatuses.map((status) => {
       const count = mediaTypeLibraryItems.filter((item) => item.status === status.id).length;
       return {
         value: status.id,
         label: `${status.label} (${count})`,
       };
-    })
-  ), [mediaTypeLibraryItems, mediaTypeStatuses]);
+    }),
+  ]), [mediaTypeLibraryItems, mediaTypeStatuses, t.releaseAll]);
   const releaseFilterOptions = React.useMemo(() => ([
     { value: 'all', label: t.filterReleaseLabel || t.releaseAll },
     { value: 'released', label: t.releaseReleased },
