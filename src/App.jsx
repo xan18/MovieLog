@@ -11,6 +11,7 @@ import { useTmdbDetailsApi } from './hooks/useTmdbDetailsApi.js';
 import { useModalHistory } from './hooks/useModalHistory.js';
 import { useStatsSelectors } from './hooks/useStatsSelectors.js';
 import { isSupabaseConfigured, supabase } from './services/supabase.js';
+import { tmdbFetchManyJson } from './services/tmdb.js';
 import { getMovieStatuses, getTvStatuses, getStatusBadgeConfig, getTvShowStatusMap, getCrewRoleMap } from './utils/statusConfig.js';
 import { isReleasedItem } from './utils/releaseUtils.js';
 import { sanitizeLibraryData } from './utils/librarySanitizer.js';
@@ -331,31 +332,74 @@ export default function App() {
     getFullDetails(item);
   };
 
+  const hydrateQuickAddedItemForPeopleStats = useCallback(async (item) => {
+    if (!item?.id || !item?.mediaType) return;
+
+    const existing = getLibraryEntry(item.mediaType, item.id);
+    const hasCredits = Boolean(existing?.credits);
+    const hasTvCreators = item.mediaType !== 'tv' || Array.isArray(existing?.created_by);
+    if (hasCredits && hasTvCreators) return;
+
+    try {
+      const [detail, credits] = await tmdbFetchManyJson([
+        { path: `/${item.mediaType}/${item.id}`, params: { language: TMDB_LANG } },
+        { path: `/${item.mediaType}/${item.id}/credits`, params: { language: TMDB_LANG } },
+      ]);
+
+      if (!detail?.id || !credits) return;
+
+      setLibrary((prev) => prev.map((entry) => {
+        if (entry.mediaType !== item.mediaType || entry.id !== item.id) return entry;
+
+        const entryHasCredits = Boolean(entry?.credits);
+        const entryHasTvCreators = entry.mediaType !== 'tv' || Array.isArray(entry?.created_by);
+        if (entryHasCredits && entryHasTvCreators) return entry;
+
+        const mergedEntry = {
+          ...detail,
+          ...entry,
+          credits,
+        };
+
+        if (Array.isArray(detail.created_by)) {
+          mergedEntry.created_by = detail.created_by;
+        }
+
+        return mergedEntry;
+      }));
+    } catch (error) {
+      console.warn(`Failed to hydrate quick-added ${item.mediaType}:${item.id} for people stats`, error);
+    }
+  }, [getLibraryEntry, TMDB_LANG, setLibrary]);
+
   const applyQuickMovieAction = useCallback((item, action) => {
     const released = isReleasedItem(item);
     if (action === 'planned') {
       addToLibrary(item, 'planned');
+      void hydrateQuickAddedItemForPeopleStats(item);
       triggerAddPulse(`${item.mediaType}-${item.id}`);
     } else if (action === 'completed') {
       if (!released) return;
       const libEntry = getLibraryEntry('movie', item.id);
       addToLibrary(item, 'completed', 0, false);
+      void hydrateQuickAddedItemForPeopleStats(item);
       triggerAddPulse(`${item.mediaType}-${item.id}`);
       setMovieRatingModal({ movieId: item.id, currentRating: libEntry?.rating || item.rating || 0, item });
     } else if (action === 'remove') {
       removeFromLibrary('movie', item.id);
     }
     setQuickActions(null);
-  }, [addToLibrary, getLibraryEntry, removeFromLibrary, triggerAddPulse]);
+  }, [addToLibrary, getLibraryEntry, hydrateQuickAddedItemForPeopleStats, removeFromLibrary, triggerAddPulse]);
 
   const applyQuickTvAction = useCallback((item, status) => {
     if (status === 'completed' && !isReleasedItem(item)) return;
     const existing = getLibraryEntry('tv', item.id);
     if (!existing) addToLibrary(item, status, 0, false);
     else setTvStatus(item.id, status, item);
+    void hydrateQuickAddedItemForPeopleStats(item);
     triggerAddPulse(`${item.mediaType}-${item.id}`);
     setQuickActions(null);
-  }, [addToLibrary, getLibraryEntry, setTvStatus, triggerAddPulse]);
+  }, [addToLibrary, getLibraryEntry, hydrateQuickAddedItemForPeopleStats, setTvStatus, triggerAddPulse]);
 
   /* Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ API calls Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ */
   const getReleaseYear = (item) => {
