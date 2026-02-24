@@ -75,8 +75,8 @@ export default function PersonModal({
                         <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'} className="w-full aspect-[2/3] object-cover" alt={item.title || item.name} />
                         {item.rating > 0 && <div className="absolute top-2 left-2 bg-yellow-500 text-black text-xs font-black px-2 py-1 rounded-lg">★ {item.rating}</div>}
                       </div>
-                      <h3 className="font-bold text-xs mb-1 line-clamp-2">{item.title || item.name}</h3>
-                      <p className="text-[10px] opacity-40 font-normal">{getYear(item)}</p>
+                      <h3 className="font-bold text-[15px] md:text-sm mb-1 line-clamp-2 leading-tight">{item.title || item.name}</h3>
+                      <p className="text-[13px] md:text-xs opacity-40 font-normal">{getYear(item)}</p>
                     </div>
                   ))}
                 </div>
@@ -111,8 +111,8 @@ export default function PersonModal({
                                 );
                               })()}
                             </div>
-                            <h3 className="font-bold text-[10px] mb-1 line-clamp-2">{item.title || item.name}</h3>
-                            <p className="text-[9px] opacity-40 font-normal">{getYear(item)}</p>
+                            <h3 className="font-bold text-sm md:text-sm mb-1 line-clamp-2 leading-tight">{item.title || item.name}</h3>
+                            <p className="text-xs md:text-xs opacity-40 font-normal">{getYear(item)}</p>
                           </div>
                         ))}
                       </div>
