@@ -50,6 +50,28 @@ const buildSearchText = (item, lang) => ([
   item?.original_name,
 ].filter(Boolean).join(' ')).toLocaleLowerCase();
 
+const renderTvProgressBadgeIcon = (variant) => {
+  if (variant === 'completed') {
+    return (
+      <svg viewBox="0 0 20 20" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="10" cy="10" r="7" />
+        <path d="M6.6 10.2 8.8 12.4 13.5 7.7" />
+      </svg>
+    );
+  }
+
+  if (variant === 'airing') {
+    return (
+      <svg viewBox="0 0 20 20" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="10" cy="10" r="7" />
+        <path d="M8.3 7.2v5.6l4.9-2.8-4.9-2.8Z" fill="currentColor" stroke="none" />
+      </svg>
+    );
+  }
+
+  return null;
+};
+
 export default function LibraryView({
   shown, library,
   libraryType, setLibraryType,
@@ -360,8 +382,8 @@ export default function LibraryView({
             const waitingForNewEpisodes = allTrackedWatched && isOngoingSeries;
             const badge = allTrackedWatched
               ? waitingForNewEpisodes
-                ? { text: '\u21BB', color: 'bg-sky-600', title: t.returning || t.inProduction || 'Ongoing (all aired watched)' }
-                : { text: '\u2713', color: 'bg-green-600', title: t.ended || 'Ended (completed)' }
+                ? { variant: 'airing', color: 'bg-sky-600', title: t.returning || t.inProduction || 'Ongoing (all aired watched)' }
+                : { variant: 'completed', color: 'bg-green-600', title: t.ended || 'Ended (completed)' }
               : { text: `\u25B6 ${remaining}`, color: 'bg-white/80 text-black', title: `${remaining}` };
             return { badge, pct, done: allTrackedWatched && !waitingForNewEpisodes, waitingForNewEpisodes };
           })();
@@ -384,7 +406,9 @@ export default function LibraryView({
                     className={`media-pill absolute top-2 left-2 ${epProgress.badge.color} shadow-lg`}
                     title={epProgress.badge.title}
                   >
-                    {epProgress.badge.text}
+                    {epProgress.badge.variant
+                      ? renderTvProgressBadgeIcon(epProgress.badge.variant)
+                      : epProgress.badge.text}
                   </div>
                 )}
                 <button

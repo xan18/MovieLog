@@ -4,6 +4,37 @@ import { tmdbFetchJson, tmdbFetchManyJson } from '../services/tmdb.js';
 const PERSON_FILMOGRAPHY_SORT_FALLBACK = '0000-00-00';
 
 const getPersonCreditDate = (item) => item?.release_date || item?.first_air_date || PERSON_FILMOGRAPHY_SORT_FALLBACK;
+const countWatchedEpisodes = (watchedEpisodes = {}) =>
+  Object.values(watchedEpisodes).reduce((sum, episodes) => sum + (Array.isArray(episodes) ? episodes.length : 0), 0);
+
+const getTvTotalEpisodes = (item) => {
+  const totalFromNumber = Number(item?.number_of_episodes);
+  if (Number.isFinite(totalFromNumber) && totalFromNumber > 0) return totalFromNumber;
+
+  if (!Array.isArray(item?.seasons)) return 0;
+  return item.seasons.reduce((sum, season) => {
+    if (!season || Number(season.season_number) <= 0) return sum;
+    return sum + (Number(season.episode_count) || 0);
+  }, 0);
+};
+
+const getTvSeasonsSignature = (seasons) => {
+  if (!Array.isArray(seasons)) return '';
+  return seasons
+    .filter((season) => season && Number(season.season_number) > 0)
+    .map((season) => `${season.season_number}:${Number(season.episode_count) || 0}`)
+    .join('|');
+};
+
+const getEpisodeMarker = (episode) => {
+  if (!episode || typeof episode !== 'object') return '';
+  return [
+    episode.id || '',
+    episode.season_number || '',
+    episode.episode_number || '',
+    episode.air_date || '',
+  ].join(':');
+};
 
 const normalizePersonRoleGroup = (credit, TMDB_LANG) => {
   const isRu = String(TMDB_LANG || '').toLowerCase().startsWith('ru');
@@ -381,6 +412,71 @@ export function useTmdbDetailsApi({
         }
       }
 
+      if (item.mediaType === 'tv' && libEntry) {
+        const previousTotalEpisodes = getTvTotalEpisodes(libEntry);
+        const freshTotalEpisodes = getTvTotalEpisodes(detail);
+        const watchedCount = countWatchedEpisodes(libEntry.watchedEpisodes || {});
+        const shouldMoveToWatching = (
+          libEntry.status === 'completed'
+          && freshTotalEpisodes > 0
+          && (
+            (previousTotalEpisodes > 0 && freshTotalEpisodes > previousTotalEpisodes)
+            || (previousTotalEpisodes === 0 && watchedCount > 0 && freshTotalEpisodes > watchedCount)
+          )
+        );
+
+        const freshSeasonSignature = getTvSeasonsSignature(detail.seasons);
+        const prevSeasonSignature = getTvSeasonsSignature(libEntry.seasons);
+        const freshNextEpisodeMarker = getEpisodeMarker(detail.next_episode_to_air);
+        const prevNextEpisodeMarker = getEpisodeMarker(libEntry.next_episode_to_air);
+        const freshLastEpisodeMarker = getEpisodeMarker(detail.last_episode_to_air);
+        const prevLastEpisodeMarker = getEpisodeMarker(libEntry.last_episode_to_air);
+
+        const metadataChanged = (
+          previousTotalEpisodes !== freshTotalEpisodes
+          || Number(libEntry.number_of_seasons || 0) !== Number(detail.number_of_seasons || 0)
+          || Boolean(libEntry.in_production) !== Boolean(detail.in_production)
+          || prevSeasonSignature !== freshSeasonSignature
+          || prevNextEpisodeMarker !== freshNextEpisodeMarker
+          || prevLastEpisodeMarker !== freshLastEpisodeMarker
+        );
+
+        if (metadataChanged || shouldMoveToWatching) {
+          setLibrary((prev) => prev.map((entry) => {
+            if (entry.mediaType !== 'tv' || entry.id !== item.id) return entry;
+
+            const nextStatus = shouldMoveToWatching && entry.status === 'completed'
+              ? 'watching'
+              : entry.status;
+            const nextSeasons = Array.isArray(detail.seasons) ? detail.seasons : entry.seasons;
+            const nextEntry = {
+              ...entry,
+              in_production: detail.in_production,
+              next_episode_to_air: detail.next_episode_to_air || null,
+              last_episode_to_air: detail.last_episode_to_air || null,
+              number_of_episodes: Number(detail.number_of_episodes) || entry.number_of_episodes || 0,
+              number_of_seasons: Number(detail.number_of_seasons) || entry.number_of_seasons || 0,
+              seasons: nextSeasons,
+              status: nextStatus,
+            };
+
+            if (
+              nextEntry.status === entry.status
+              && nextEntry.in_production === entry.in_production
+              && nextEntry.number_of_episodes === entry.number_of_episodes
+              && nextEntry.number_of_seasons === entry.number_of_seasons
+              && getTvSeasonsSignature(nextEntry.seasons) === getTvSeasonsSignature(entry.seasons)
+              && getEpisodeMarker(nextEntry.next_episode_to_air) === getEpisodeMarker(entry.next_episode_to_air)
+              && getEpisodeMarker(nextEntry.last_episode_to_air) === getEpisodeMarker(entry.last_episode_to_air)
+            ) {
+              return entry;
+            }
+
+            return nextEntry;
+          }));
+        }
+      }
+
       setSelectedItem({
         ...detail,
         mediaType: item.mediaType,
@@ -397,7 +493,7 @@ export function useTmdbDetailsApi({
     } catch (error) {
       notifyError(`Failed to load details for ${item.mediaType}:${item.id}`, error);
     }
-  }, [TMDB_LANG, library, notifyError, setSeasonEpisodes, setSelectedItem]);
+  }, [TMDB_LANG, library, notifyError, setLibrary, setSeasonEpisodes, setSelectedItem]);
 
   const getPersonDetails = useCallback(async (personId) => {
     try {

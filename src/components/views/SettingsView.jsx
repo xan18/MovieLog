@@ -13,6 +13,58 @@ import {
 } from '../../services/personalRecommendations.js';
 import { tmdbFetchJson } from '../../services/tmdb.js';
 
+const TMDB_LIBRARY_REFRESH_CHUNK_SIZE = 4;
+
+const countWatchedEpisodes = (watchedEpisodes = {}) =>
+  Object.values(watchedEpisodes).reduce((sum, episodes) => sum + (Array.isArray(episodes) ? episodes.length : 0), 0);
+
+const getTvTotalEpisodes = (item) => {
+  const totalFromNumber = Number(item?.number_of_episodes);
+  if (Number.isFinite(totalFromNumber) && totalFromNumber > 0) return totalFromNumber;
+
+  if (!Array.isArray(item?.seasons)) return 0;
+  return item.seasons.reduce((sum, season) => {
+    if (!season || Number(season.season_number) <= 0) return sum;
+    return sum + (Number(season.episode_count) || 0);
+  }, 0);
+};
+
+const resolveTvProgressStatus = (currentStatus, watchedEpisodes, totalEpisodes) => {
+  const watchedCount = countWatchedEpisodes(watchedEpisodes);
+  const canAutoComplete = currentStatus === 'watching' || currentStatus === 'planned';
+
+  if (canAutoComplete && totalEpisodes > 0 && watchedCount >= totalEpisodes) {
+    return 'completed';
+  }
+  if (currentStatus === 'planned' && watchedCount > 0) {
+    return 'watching';
+  }
+  if (currentStatus === 'completed') {
+    if (totalEpisodes > 0 && watchedCount < totalEpisodes) return 'watching';
+    if (totalEpisodes === 0 && watchedCount === 0) return 'watching';
+  }
+
+  return currentStatus;
+};
+
+const getTvSeasonsSignature = (seasons) => {
+  if (!Array.isArray(seasons)) return '';
+  return seasons
+    .filter((season) => season && Number(season.season_number) > 0)
+    .map((season) => `${season.season_number}:${Number(season.episode_count) || 0}`)
+    .join('|');
+};
+
+const getEpisodeMarker = (episode) => {
+  if (!episode || typeof episode !== 'object') return '';
+  return [
+    episode.id || '',
+    episode.season_number || '',
+    episode.episode_number || '',
+    episode.air_date || '',
+  ].join(':');
+};
+
 export default function SettingsView({
   library, setLibrary,
   currentUserId,
@@ -42,6 +94,7 @@ export default function SettingsView({
   const [hiddenForYouModalItems, setHiddenForYouModalItems] = useState([]);
   const [hiddenForYouModalLoading, setHiddenForYouModalLoading] = useState(false);
   const [hiddenForYouModalError, setHiddenForYouModalError] = useState('');
+  const [isLibraryRefreshRunning, setIsLibraryRefreshRunning] = useState(false);
   const noticeTimerRef = useRef(null);
 
   const START_TAB_OPTIONS = useMemo(() => ([
@@ -228,6 +281,113 @@ export default function SettingsView({
     a.click();
     URL.revokeObjectURL(url);
     return fileName;
+  };
+
+  const refreshLibraryStatsAndTvStatuses = async () => {
+    if (isLibraryRefreshRunning) return;
+
+    const tvItems = library.filter((item) => item.mediaType === 'tv');
+    if (tvItems.length === 0) {
+      showNotice('info', t.libraryRefreshNoTv || t.empty);
+      return;
+    }
+
+    setIsLibraryRefreshRunning(true);
+    const tmdbLanguage = lang === 'ru' ? 'ru-RU' : 'en-US';
+    const detailMap = new Map();
+    let failedCount = 0;
+
+    try {
+      for (let index = 0; index < tvItems.length; index += TMDB_LIBRARY_REFRESH_CHUNK_SIZE) {
+        const chunk = tvItems.slice(index, index + TMDB_LIBRARY_REFRESH_CHUNK_SIZE);
+        const results = await Promise.all(chunk.map(async (item) => {
+          try {
+            const detail = await tmdbFetchJson(`/tv/${item.id}`, { language: tmdbLanguage });
+            return { id: item.id, detail };
+          } catch (error) {
+            console.warn(`Failed to refresh TV library item ${item.id}`, error);
+            return { id: item.id, detail: null };
+          }
+        }));
+
+        results.forEach((result) => {
+          if (!result?.detail?.id) {
+            failedCount += 1;
+            return;
+          }
+          detailMap.set(result.id, result.detail);
+        });
+      }
+
+      let metadataUpdatedCount = 0;
+      let statusChangedCount = 0;
+      let movedToWatchingCount = 0;
+
+      const nextLibrary = library.map((item) => {
+        if (item.mediaType !== 'tv') return item;
+
+        const detail = detailMap.get(item.id);
+        if (!detail) return item;
+
+        const totalEpisodes = getTvTotalEpisodes(detail);
+        const nextStatus = resolveTvProgressStatus(item.status, item.watchedEpisodes || {}, totalEpisodes);
+        const nextSeasons = Array.isArray(detail.seasons) ? detail.seasons : item.seasons;
+        const nextNumberOfEpisodes = Number(detail.number_of_episodes) || item.number_of_episodes || 0;
+        const nextNumberOfSeasons = Number(detail.number_of_seasons) || item.number_of_seasons || 0;
+
+        const metadataChanged = (
+          Boolean(item.in_production) !== Boolean(detail.in_production)
+          || nextNumberOfEpisodes !== (Number(item.number_of_episodes) || 0)
+          || nextNumberOfSeasons !== (Number(item.number_of_seasons) || 0)
+          || getTvSeasonsSignature(item.seasons) !== getTvSeasonsSignature(nextSeasons)
+          || getEpisodeMarker(item.next_episode_to_air) !== getEpisodeMarker(detail.next_episode_to_air)
+          || getEpisodeMarker(item.last_episode_to_air) !== getEpisodeMarker(detail.last_episode_to_air)
+        );
+        const statusChanged = nextStatus !== item.status;
+
+        if (!metadataChanged && !statusChanged) return item;
+
+        if (metadataChanged) metadataUpdatedCount += 1;
+        if (statusChanged) {
+          statusChangedCount += 1;
+          if (item.status === 'completed' && nextStatus === 'watching') movedToWatchingCount += 1;
+        }
+
+        return {
+          ...item,
+          status: nextStatus,
+          in_production: detail.in_production,
+          next_episode_to_air: detail.next_episode_to_air || null,
+          last_episode_to_air: detail.last_episode_to_air || null,
+          number_of_episodes: nextNumberOfEpisodes,
+          number_of_seasons: nextNumberOfSeasons,
+          seasons: nextSeasons,
+        };
+      });
+
+      setLibrary(nextLibrary);
+
+      const hasChanges = metadataUpdatedCount > 0 || statusChangedCount > 0;
+      const summaryParts = [
+        `${t.libraryRefreshChecked || 'Checked'}: ${tvItems.length}`,
+        `${t.libraryRefreshUpdated || 'Updated'}: ${metadataUpdatedCount}`,
+        `${t.libraryRefreshStatusesChanged || 'Statuses'}: ${statusChangedCount}`,
+        `${t.libraryRefreshMovedToWatching || 'To watching'}: ${movedToWatchingCount}`,
+      ];
+      if (failedCount > 0) {
+        summaryParts.push(`${t.libraryRefreshErrors || 'Errors'}: ${failedCount}`);
+      }
+
+      showNotice(
+        failedCount > 0 ? 'info' : (hasChanges ? 'success' : 'info'),
+        `${hasChanges ? (t.libraryRefreshDone || t.fileSaved) : (t.libraryRefreshNoChanges || t.empty)}. ${summaryParts.join(' • ')}`
+      );
+    } catch (error) {
+      console.error('Failed to refresh library TV statuses', error);
+      showNotice('error', t.libraryRefreshFailed || t.networkError);
+    } finally {
+      setIsLibraryRefreshRunning(false);
+    }
   };
 
   return (
@@ -500,6 +660,29 @@ export default function SettingsView({
           <p className="text-[10px] opacity-30 text-center">
             {t.storedIn} ({(new Blob([JSON.stringify(library)]).size / 1024).toFixed(1)} KB)
           </p>
+
+          <div className="mt-4 pt-4 border-t border-white/5 space-y-2">
+            <p className="text-[11px] font-bold uppercase tracking-widest opacity-50">
+              {t.libraryRefreshButton || t.yourLibrary}
+            </p>
+            <p className="text-xs opacity-55">
+              {t.libraryRefreshHint || t.dataHint}
+            </p>
+            <button
+              type="button"
+              onClick={refreshLibraryStatsAndTvStatuses}
+              disabled={isLibraryRefreshRunning}
+              className={`w-full py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all border ${
+                isLibraryRefreshRunning
+                  ? 'bg-white/5 border-white/5 text-white/40 cursor-not-allowed'
+                  : 'bg-white/5 hover:bg-white/10 border-white/10'
+              }`}
+            >
+              {isLibraryRefreshRunning
+                ? (t.libraryRefreshRunning || t.loading)
+                : (t.libraryRefreshButton || t.yourLibrary)}
+            </button>
+          </div>
         </div>
       </div>
 
