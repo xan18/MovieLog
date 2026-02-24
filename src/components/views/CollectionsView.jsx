@@ -79,7 +79,7 @@ export default function CollectionsView({
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState('');
   const [searchResults, setSearchResults] = useState([]);
-  const [collectionsSection, setCollectionsSection] = useState('curated');
+  const [collectionsSection, setCollectionsSection] = useState('forYou');
   const debouncedSearchQuery = useDebounce(searchQuery.trim(), 350);
   const collectionModalCloseTimerRef = useRef(null);
   const collectionSearchInputRef = useRef(null);
@@ -141,8 +141,8 @@ export default function CollectionsView({
   ]), [t.movies, t.tvShows]);
 
   const collectionsSections = useMemo(() => ([
-    { id: 'curated', label: t.collections },
     { id: 'forYou', label: t.collectionsForYouTab },
+    { id: 'curated', label: t.collections },
   ]), [t.collections, t.collectionsForYouTab]);
 
   const selectedCollection = useMemo(
@@ -762,7 +762,7 @@ export default function CollectionsView({
     <div className="view-stack">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h2 className="app-page-title">{t.collections.toUpperCase()}</h2>
+          <h2 className="app-page-title">{t.recommendations.toUpperCase()}</h2>
           <p className="text-xs opacity-55 mt-2">{t.collectionsSubtitle}</p>
         </div>
         {canAuthorMode && (

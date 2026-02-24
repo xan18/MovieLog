@@ -511,7 +511,7 @@ export default function App() {
             {[
               { id: 'catalog', label: t.search },
               { id: 'library', label: t.shelf },
-              { id: 'collections', label: t.collections },
+              { id: 'collections', label: t.recommendations },
               { id: 'stats', label: t.stats },
               { id: 'settings', label: t.settings }
             ].map(tab => (
@@ -801,7 +801,7 @@ export default function App() {
         {[
           { id: 'catalog', icon: '\u{1F50D}', label: t.search },
           { id: 'library', icon: '\u{1F4DA}', label: t.shelf },
-          { id: 'collections', icon: '\u{1F381}', label: t.collections },
+          { id: 'collections', icon: '\u{1F381}', label: t.recommendations },
           { id: 'stats', icon: '\u{1F4CA}', label: t.stats },
           { id: 'settings', icon: '\u2699\uFE0F', label: t.settings }
         ].map(tab => (
