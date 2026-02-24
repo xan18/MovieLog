@@ -12,10 +12,10 @@ export default function CatalogView({
   selectedYear, setSelectedYear,
   selectedReleaseFilter, setSelectedReleaseFilter,
   catalogSort, setCatalogSort,
+  catalogLibraryFilter, setCatalogLibraryFilter,
   genres,
   catalogItems,
-  page, setPage,
-  totalPages,
+  setPage,
   hasMore,
   catalogError,
   isCatalogLoading,
@@ -29,6 +29,10 @@ export default function CatalogView({
   STATUS_BADGE_CONFIG,
   addPulseId,
 }) {
+  const CATALOG_PAGE_SIZE = 20;
+  const [requestedPageCount, setRequestedPageCount] = React.useState(1);
+  const autoFillSignatureRef = React.useRef('');
+
   const genreOptions = [
     { value: '', label: t.allGenres },
     ...genres.map((genre) => ({ value: String(genre.id), label: genre.name })),
@@ -48,8 +52,19 @@ export default function CatalogView({
     value: option.value,
     label: option.label,
   }));
+  const catalogLibraryFilterOptions = [
+    { value: 'all', label: t.catalogLibraryFilterAll || t.releaseAll },
+    { value: 'hideAdded', label: t.catalogLibraryFilterHideAdded || t.inLibrary },
+  ];
 
   const showInitialSkeleton = isCatalogLoading && catalogItems.length === 0;
+  const filteredCatalogItems = catalogLibraryFilter === 'hideAdded'
+    ? catalogItems.filter((item) => !getLibraryEntry(item.mediaType, item.id))
+    : catalogItems;
+  const targetVisibleCount = requestedPageCount * CATALOG_PAGE_SIZE;
+  const visibleCatalogItems = filteredCatalogItems.slice(0, targetVisibleCount);
+  const hasBufferedItems = filteredCatalogItems.length > visibleCatalogItems.length;
+  const canLoadMore = hasBufferedItems || hasMore;
   const {
     onContextMenu,
     onTouchStart,
@@ -64,12 +79,53 @@ export default function CatalogView({
     onCardClick(item);
   };
 
+  React.useEffect(() => {
+    autoFillSignatureRef.current = '';
+    setRequestedPageCount(1);
+  }, [mediaType, query, selectedGenre, selectedYear, selectedReleaseFilter, catalogSort]);
+
+  React.useEffect(() => {
+    if (catalogLibraryFilter !== 'hideAdded') return;
+    if (isCatalogLoading || catalogError || !hasMore) return;
+    if (visibleCatalogItems.length >= targetVisibleCount) return;
+
+    const signature = `${filteredCatalogItems.length}:${visibleCatalogItems.length}:${targetVisibleCount}`;
+    if (autoFillSignatureRef.current === signature) return;
+    autoFillSignatureRef.current = signature;
+
+    setPage((prev) => prev + 1);
+  }, [
+    catalogLibraryFilter,
+    isCatalogLoading,
+    catalogError,
+    hasMore,
+    filteredCatalogItems.length,
+    visibleCatalogItems.length,
+    targetVisibleCount,
+    setPage,
+  ]);
+
+  const handleLoadMore = () => {
+    const nextRequestedPageCount = requestedPageCount + 1;
+    const nextTargetVisibleCount = nextRequestedPageCount * CATALOG_PAGE_SIZE;
+
+    setRequestedPageCount(nextRequestedPageCount);
+
+    if (catalogLibraryFilter === 'hideAdded') return;
+
+    if (filteredCatalogItems.length < nextTargetVisibleCount && hasMore && !isCatalogLoading) {
+      setPage((prev) => prev + 1);
+    }
+  };
+
   const resetCatalogFilters = () => {
     setQuery('');
     setSelectedGenre('');
     setSelectedYear('');
     setSelectedReleaseFilter('all');
     setCatalogSort('popularity.desc');
+    setRequestedPageCount(1);
+    setCatalogLibraryFilter('all');
     setPage(1);
   };
 
@@ -105,7 +161,7 @@ export default function CatalogView({
           )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
           <CustomSelect
             value={selectedGenre}
             options={genreOptions}
@@ -130,6 +186,12 @@ export default function CatalogView({
             onChange={(nextValue) => { setSelectedReleaseFilter(nextValue); setPage(1); }}
             ariaLabel={t.releaseAll}
           />
+          <CustomSelect
+            value={catalogLibraryFilter}
+            options={catalogLibraryFilterOptions}
+            onChange={(nextValue) => { setCatalogLibraryFilter(nextValue); setPage(1); }}
+            ariaLabel={t.catalogLibraryFilterLabel || t.inLibrary}
+          />
         </div>
       </div>
 
@@ -148,7 +210,7 @@ export default function CatalogView({
           </div>
         ))}
 
-        {!showInitialSkeleton && catalogItems.map((item, i) => {
+        {!showInitialSkeleton && visibleCatalogItems.map((item, i) => {
           const libEntry = getLibraryEntry(item.mediaType, item.id);
           const badge = libEntry && STATUS_BADGE_CONFIG[libEntry.status];
           const cardKey = `${item.mediaType}-${item.id}`;
@@ -203,7 +265,7 @@ export default function CatalogView({
         })}
       </div>
 
-      {!catalogError && !isCatalogLoading && catalogItems.length === 0 && (
+      {!catalogError && !isCatalogLoading && visibleCatalogItems.length === 0 && (
         <div className="empty-state">
           <div className="empty-state-icon" aria-hidden="true">{'\u{1F50D}'}</div>
           <p className="empty-state-title">{t.catalogEmptyTitle || t.empty}</p>
@@ -218,10 +280,10 @@ export default function CatalogView({
         </div>
       )}
 
-      {catalogItems.length > 0 && hasMore && (
+      {visibleCatalogItems.length > 0 && canLoadMore && (
         <button
-          onClick={() => setPage(p => p + 1)}
-          disabled={isCatalogLoading || !hasMore || page >= totalPages}
+          onClick={handleLoadMore}
+          disabled={isCatalogLoading || !canLoadMore}
           className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-black text-xs uppercase tracking-widest transition-all disabled:opacity-55 disabled:cursor-not-allowed"
         >
           {isCatalogLoading ? (t.loading || t.loadMore) : t.loadMore}

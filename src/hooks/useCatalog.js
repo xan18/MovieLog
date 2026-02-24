@@ -12,6 +12,7 @@ function createDefaultProfile() {
     selectedYear: '',
     selectedReleaseFilter: 'all',
     catalogSort: 'popularity.desc',
+    catalogLibraryFilter: 'all',
   };
 }
 
@@ -37,6 +38,9 @@ function readStoredCatalogFilters() {
         ? profile.selectedReleaseFilter
         : 'all',
       catalogSort: typeof profile?.catalogSort === 'string' ? profile.catalogSort : 'popularity.desc',
+      catalogLibraryFilter: ['all', 'hideAdded'].includes(profile?.catalogLibraryFilter)
+        ? profile.catalogLibraryFilter
+        : 'all',
     });
     const mediaType = parsed?.mediaType === 'tv' ? 'tv' : 'movie';
     return {
@@ -72,6 +76,9 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
   const [catalogSort, setCatalogSort] = useState(
     resolveCatalogSort(initialStored.mediaType, initialStored.profiles[initialStored.mediaType].catalogSort)
   );
+  const [catalogLibraryFilter, setCatalogLibraryFilter] = useState(
+    initialStored.profiles[initialStored.mediaType].catalogLibraryFilter
+  );
   const [genres, setGenres] = useState([]);
   const genreCache = useRef({});
   const catalogProfilesRef = useRef(initialStored.profiles);
@@ -97,6 +104,7 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
       setSelectedYear(saved.selectedYear);
       setSelectedReleaseFilter(saved.selectedReleaseFilter);
       setCatalogSort(resolveCatalogSort(nextMediaType, saved.catalogSort));
+      setCatalogLibraryFilter(saved.catalogLibraryFilter);
     } else {
       setSelectedGenre('');
       setSelectedYear('');
@@ -123,13 +131,14 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
       selectedYear,
       selectedReleaseFilter,
       catalogSort: resolveCatalogSort(mediaType, catalogSort),
+      catalogLibraryFilter,
     };
     const payload = {
       mediaType,
       profiles: catalogProfilesRef.current,
     };
     localStorage.setItem(CATALOG_FILTERS_KEY, JSON.stringify(payload));
-  }, [persistCatalogFilters, mediaType, query, selectedGenre, selectedYear, selectedReleaseFilter, catalogSort]);
+  }, [persistCatalogFilters, mediaType, query, selectedGenre, selectedYear, selectedReleaseFilter, catalogSort, catalogLibraryFilter]);
 
   // Fetch genres with cache
   useEffect(() => {
@@ -221,6 +230,7 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
     selectedYear, setSelectedYear,
     selectedReleaseFilter, setSelectedReleaseFilter,
     catalogSort, setCatalogSort,
+    catalogLibraryFilter, setCatalogLibraryFilter,
     genres,
     catalogItems,
     page, setPage,
