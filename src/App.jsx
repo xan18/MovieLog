@@ -699,7 +699,7 @@ export default function App() {
         <RatingModal
           title={`${t.rateSeasonTitle} ${ratingModal.seasonNumber}`}
           subtitle={t.chooseRating}
-          removeLabel={t.removeRating}
+          removeLabel={ratingModal.currentRating > 0 ? t.removeRating : t.leaveUnrated}
           cancelLabel={t.cancel}
           confirmLabel={t.confirmRating}
           currentRating={ratingModal.currentRating}
@@ -722,15 +722,59 @@ export default function App() {
             }
             setRatingModal(null);
           }}
-          onRemove={ratingModal.currentRating > 0 ? () => {
-            setSeasonRating(ratingModal.tvId, ratingModal.seasonNumber, 0);
-            const updatedRatings = {...(selectedItem.seasonRatings || {})};
-            delete updatedRatings[ratingModal.seasonNumber];
-            const ratedSeasons = Object.values(updatedRatings);
-            const avg = ratedSeasons.length > 0 ? Math.round(ratedSeasons.reduce((s, r) => s + r, 0) / ratedSeasons.length) : 0;
-            setSelectedItem({...selectedItem, seasonRatings: updatedRatings, rating: avg});
+          onRemove={() => {
+            if (ratingModal.currentRating > 0) {
+              setSeasonRating(ratingModal.tvId, ratingModal.seasonNumber, 0);
+              const updatedRatings = {...(selectedItem.seasonRatings || {})};
+              delete updatedRatings[ratingModal.seasonNumber];
+              const ratedSeasons = Object.values(updatedRatings);
+              const avg = ratedSeasons.length > 0 ? Math.round(ratedSeasons.reduce((s, r) => s + r, 0) / ratedSeasons.length) : 0;
+              setSelectedItem({...selectedItem, seasonRatings: updatedRatings, rating: avg});
+              setRatingModal(null);
+              return;
+            }
+
+            const season = selectedItem?.seasons?.find(s => s.season_number === ratingModal.seasonNumber);
+            const seasonEpisodes = season
+              ? Array.from({ length: season.episode_count }, (_, i) => i + 1)
+              : [];
+            const libEntry = getLibraryEntry('tv', ratingModal.tvId);
+
+            if (libEntry) {
+              const updatedWatched = {...(selectedItem.watchedEpisodes || {})};
+              if (seasonEpisodes.length > 0) updatedWatched[ratingModal.seasonNumber] = seasonEpisodes;
+
+              const updatedRatings = {...(selectedItem.seasonRatings || {})};
+              delete updatedRatings[ratingModal.seasonNumber];
+
+              const ratedSeasons = Object.values(updatedRatings);
+              const avg = ratedSeasons.length > 0 ? Math.round(ratedSeasons.reduce((s, r) => s + r, 0) / ratedSeasons.length) : 0;
+              const baseStatus = libEntry.status === 'planned' ? 'watching' : (libEntry.status || 'watching');
+              const newStatus = resolveTvProgressStatus(baseStatus, updatedWatched, selectedItem, libEntry);
+
+              setLibrary(prev => prev.map(x => (
+                x.mediaType === 'tv' && x.id === ratingModal.tvId
+                  ? { ...x, watchedEpisodes: updatedWatched, seasonRatings: updatedRatings, rating: avg, status: newStatus }
+                  : x
+              )));
+              setSelectedItem({...selectedItem, watchedEpisodes: updatedWatched, seasonRatings: updatedRatings, rating: avg, status: newStatus});
+            } else {
+              const watchedEpisodes = seasonEpisodes.length > 0 ? { [ratingModal.seasonNumber]: seasonEpisodes } : {};
+              const newStatus = resolveTvProgressStatus('watching', watchedEpisodes, selectedItem);
+              setLibrary(prev => [...prev, {
+                ...selectedItem,
+                status: newStatus,
+                rating: 0,
+                dateAdded: Date.now(),
+                watchedEpisodes,
+                seasonRatings: {},
+                episodeRuntimes: {},
+              }]);
+              setSelectedItem({...selectedItem, watchedEpisodes, seasonRatings: {}, rating: 0, status: newStatus});
+            }
+
             setRatingModal(null);
-          } : null}
+          }}
           onClose={() => setRatingModal(null)}
         />
       )}
