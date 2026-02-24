@@ -34,12 +34,12 @@ export default function CatalogView({
   const autoFillSignatureRef = React.useRef('');
 
   const genreOptions = [
-    { value: '', label: t.allGenres },
+    { value: '', label: t.filterGenreLabel || t.allGenres },
     ...genres.map((genre) => ({ value: String(genre.id), label: genre.name })),
   ];
 
   const yearOptions = [
-    { value: '', label: t.allYears },
+    { value: '', label: t.filterYearLabel || t.allYears },
     ...YEARS.map((year) => ({ value: String(year), label: String(year) })),
   ];
 
@@ -50,10 +50,10 @@ export default function CatalogView({
 
   const releaseFilterOptions = RELEASE_FILTER_OPTIONS.map((option) => ({
     value: option.value,
-    label: option.label,
+    label: option.value === 'all' ? (t.filterReleaseLabel || t.releaseAll) : option.label,
   }));
   const catalogLibraryFilterOptions = [
-    { value: 'all', label: t.catalogLibraryFilterAll || t.releaseAll },
+    { value: 'all', label: t.catalogLibraryFilterLabel || t.inLibrary },
     { value: 'hideAdded', label: t.catalogLibraryFilterHideAdded || t.inLibrary },
   ];
 
@@ -162,36 +162,46 @@ export default function CatalogView({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-          <CustomSelect
-            value={selectedGenre}
-            options={genreOptions}
-            onChange={(nextValue) => { setSelectedGenre(nextValue); setPage(1); }}
-            ariaLabel={t.allGenres}
-          />
-          <CustomSelect
-            value={selectedYear}
-            options={yearOptions}
-            onChange={(nextValue) => { setSelectedYear(nextValue); setPage(1); }}
-            ariaLabel={t.allYears}
-          />
-          <CustomSelect
-            value={catalogSort}
-            options={catalogSortOptions}
-            onChange={(nextValue) => { setCatalogSort(nextValue); setPage(1); }}
-            ariaLabel={t.rating}
-          />
-          <CustomSelect
-            value={selectedReleaseFilter}
-            options={releaseFilterOptions}
-            onChange={(nextValue) => { setSelectedReleaseFilter(nextValue); setPage(1); }}
-            ariaLabel={t.releaseAll}
-          />
-          <CustomSelect
-            value={catalogLibraryFilter}
-            options={catalogLibraryFilterOptions}
-            onChange={(nextValue) => { setCatalogLibraryFilter(nextValue); setPage(1); }}
-            ariaLabel={t.catalogLibraryFilterLabel || t.inLibrary}
-          />
+          <div>
+            <CustomSelect
+              value={catalogLibraryFilter}
+              options={catalogLibraryFilterOptions}
+              onChange={(nextValue) => { setCatalogLibraryFilter(nextValue); setPage(1); }}
+              ariaLabel={t.catalogLibraryFilterLabel || t.inLibrary}
+            />
+          </div>
+          <div>
+            <CustomSelect
+              value={selectedGenre}
+              options={genreOptions}
+              onChange={(nextValue) => { setSelectedGenre(nextValue); setPage(1); }}
+              ariaLabel={t.filterGenreLabel || t.allGenres}
+            />
+          </div>
+          <div>
+            <CustomSelect
+              value={selectedYear}
+              options={yearOptions}
+              onChange={(nextValue) => { setSelectedYear(nextValue); setPage(1); }}
+              ariaLabel={t.filterYearLabel || t.allYears}
+            />
+          </div>
+          <div>
+            <CustomSelect
+              value={selectedReleaseFilter}
+              options={releaseFilterOptions}
+              onChange={(nextValue) => { setSelectedReleaseFilter(nextValue); setPage(1); }}
+              ariaLabel={t.filterReleaseLabel || t.releaseAll}
+            />
+          </div>
+          <div>
+            <CustomSelect
+              value={catalogSort}
+              options={catalogSortOptions}
+              onChange={(nextValue) => { setCatalogSort(nextValue); setPage(1); }}
+              ariaLabel={t.filterSortLabel || t.rating}
+            />
+          </div>
         </div>
       </div>
 

@@ -2,6 +2,8 @@ import React from 'react';
 import { CustomSelect, LazyImg } from '../ui.jsx';
 import { getYear } from '../../utils/appUtils.js';
 import { IMG_500 } from '../../constants/appConstants.js';
+import { tmdbFetchJson } from '../../services/tmdb.js';
+import { isReleasedDate } from '../../utils/releaseUtils.js';
 import { useQuickActionGesture } from '../../hooks/useQuickActionGesture.js';
 
 const pickDisplayTitle = (item, lang) => {
@@ -15,6 +17,38 @@ const pickDisplayTitle = (item, lang) => {
   return item.name_en || item.name || item.name_ru || item.original_name || '';
 };
 
+const getGenreIdsFromItem = (item) => {
+  const result = [];
+
+  if (Array.isArray(item?.genre_ids)) {
+    item.genre_ids.forEach((id) => {
+      const parsed = Number(id);
+      if (Number.isFinite(parsed)) result.push(parsed);
+    });
+  }
+
+  if (Array.isArray(item?.genres)) {
+    item.genres.forEach((genre) => {
+      const parsed = Number(genre?.id);
+      if (Number.isFinite(parsed)) result.push(parsed);
+    });
+  }
+
+  return result;
+};
+
+const buildSearchText = (item, lang) => ([
+  pickDisplayTitle(item, lang),
+  item?.title,
+  item?.name,
+  item?.title_ru,
+  item?.name_ru,
+  item?.title_en,
+  item?.name_en,
+  item?.original_title,
+  item?.original_name,
+].filter(Boolean).join(' ')).toLocaleLowerCase();
+
 export default function LibraryView({
   shown, library,
   libraryType, setLibraryType,
@@ -27,6 +61,14 @@ export default function LibraryView({
   openQuickActions,
   setActiveTab,
 }) {
+  const [libraryQuery, setLibraryQuery] = React.useState('');
+  const [selectedGenre, setSelectedGenre] = React.useState('');
+  const [selectedYear, setSelectedYear] = React.useState('');
+  const [selectedReleaseFilter, setSelectedReleaseFilter] = React.useState('all');
+  const [genreCatalog, setGenreCatalog] = React.useState([]);
+  const genreCacheRef = React.useRef({});
+  const TMDB_LANG = lang === 'ru' ? 'ru-RU' : 'en-US';
+
   const {
     onContextMenu,
     onTouchStart,
@@ -41,13 +83,146 @@ export default function LibraryView({
     onCardClick(item);
   };
 
+  const mediaTypeStatuses = libraryType === 'movie' ? MOVIE_STATUSES : TV_STATUSES;
+  const mediaTypeLibraryItems = React.useMemo(
+    () => library.filter((item) => item.mediaType === libraryType),
+    [library, libraryType]
+  );
+
+  React.useEffect(() => {
+    setSelectedGenre('');
+  }, [libraryType]);
+
+  React.useEffect(() => {
+    const cacheKey = `${libraryType}:${TMDB_LANG}`;
+    if (genreCacheRef.current[cacheKey]) {
+      setGenreCatalog(genreCacheRef.current[cacheKey]);
+      return;
+    }
+
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const payload = await tmdbFetchJson(
+          `/genre/${libraryType}/list`,
+          { language: TMDB_LANG },
+          { signal: controller.signal }
+        );
+        const list = Array.isArray(payload?.genres) ? payload.genres : [];
+        genreCacheRef.current[cacheKey] = list;
+        setGenreCatalog(list);
+      } catch (error) {
+        if (error?.name !== 'AbortError') {
+          console.error(`Failed to load library genres for ${libraryType}`, error);
+        }
+        setGenreCatalog([]);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [libraryType, TMDB_LANG]);
+
   const canSortByMyRating = shelf !== 'planned';
-  const sortOptions = [
+  const sortOptions = React.useMemo(() => ([
     { value: 'imdbRating', label: t.byImdbRating },
     ...(canSortByMyRating ? [{ value: 'myRating', label: t.byMyRating }] : []),
     { value: 'dateAdded', label: t.byDateAdded },
     { value: 'releaseYear', label: t.byReleaseYear },
-  ];
+  ]), [canSortByMyRating, t.byDateAdded, t.byImdbRating, t.byMyRating, t.byReleaseYear]);
+
+  const statusOptions = React.useMemo(() => (
+    mediaTypeStatuses.map((status) => {
+      const count = mediaTypeLibraryItems.filter((item) => item.status === status.id).length;
+      return {
+        value: status.id,
+        label: `${status.label} (${count})`,
+      };
+    })
+  ), [mediaTypeLibraryItems, mediaTypeStatuses]);
+  const releaseFilterOptions = React.useMemo(() => ([
+    { value: 'all', label: t.filterReleaseLabel || t.releaseAll },
+    { value: 'released', label: t.releaseReleased },
+    { value: 'upcoming', label: t.releaseUpcoming },
+  ]), [t.filterReleaseLabel, t.releaseAll, t.releaseReleased, t.releaseUpcoming]);
+
+  const availableGenreIdSet = React.useMemo(() => {
+    const set = new Set();
+    mediaTypeLibraryItems.forEach((item) => {
+      getGenreIdsFromItem(item).forEach((id) => set.add(id));
+    });
+    return set;
+  }, [mediaTypeLibraryItems]);
+
+  const genreOptions = React.useMemo(() => {
+    const collator = new Intl.Collator(lang === 'ru' ? 'ru' : 'en');
+    const options = genreCatalog
+      .filter((genre) => availableGenreIdSet.has(Number(genre.id)))
+      .sort((a, b) => collator.compare(a.name || '', b.name || ''))
+      .map((genre) => ({ value: String(genre.id), label: genre.name }));
+
+    return [{ value: '', label: t.filterGenreLabel || t.allGenres }, ...options];
+  }, [availableGenreIdSet, genreCatalog, lang, t.filterGenreLabel, t.allGenres]);
+
+  React.useEffect(() => {
+    if (!selectedGenre) return;
+    const exists = genreOptions.some((option) => String(option.value) === String(selectedGenre));
+    if (!exists) setSelectedGenre('');
+  }, [genreOptions, selectedGenre]);
+
+  const yearOptions = React.useMemo(() => {
+    const years = Array.from(new Set(
+      mediaTypeLibraryItems
+        .map((item) => Number(getYear(item)))
+        .filter((year) => Number.isFinite(year) && year > 1800)
+    )).sort((a, b) => b - a);
+
+    return [
+      { value: '', label: t.filterYearLabel || t.allYears },
+      ...years.map((year) => ({ value: String(year), label: String(year) })),
+    ];
+  }, [mediaTypeLibraryItems, t.filterYearLabel, t.allYears]);
+
+  const normalizedLibraryQuery = libraryQuery.trim().toLocaleLowerCase();
+  const filteredShown = React.useMemo(() => (
+    shown.filter((item) => {
+      if (normalizedLibraryQuery) {
+        const haystack = buildSearchText(item, lang);
+        if (!haystack.includes(normalizedLibraryQuery)) return false;
+      }
+
+      if (selectedYear) {
+        const itemYear = String(getYear(item));
+        if (itemYear !== String(selectedYear)) return false;
+      }
+
+      if (selectedReleaseFilter !== 'all') {
+        const date = item.mediaType === 'movie' ? item.release_date : item.first_air_date;
+        const released = isReleasedDate(date);
+        if (selectedReleaseFilter === 'released' && !released) return false;
+        if (selectedReleaseFilter === 'upcoming' && released) return false;
+      }
+
+      if (selectedGenre) {
+        const targetGenreId = Number(selectedGenre);
+        if (!Number.isFinite(targetGenreId)) return false;
+        const genreIds = getGenreIdsFromItem(item);
+        if (!genreIds.includes(targetGenreId)) return false;
+      }
+
+      return true;
+    })
+  ), [shown, normalizedLibraryQuery, lang, selectedYear, selectedReleaseFilter, selectedGenre]);
+
+  const hasActiveLocalFilters = Boolean(
+    libraryQuery.trim() || selectedGenre || selectedYear || selectedReleaseFilter !== 'all'
+  );
+
+  const resetLocalFilters = () => {
+    setLibraryQuery('');
+    setSelectedGenre('');
+    setSelectedYear('');
+    setSelectedReleaseFilter('all');
+  };
 
   return (
     <div className="view-stack">
@@ -58,30 +233,91 @@ export default function LibraryView({
             <button onClick={() => setLibraryType('movie')} className={`app-switch-btn ${libraryType === 'movie' ? 'active' : ''}`}>{t.movies}</button>
             <button onClick={() => setLibraryType('tv')} className={`app-switch-btn ${libraryType === 'tv' ? 'active' : ''}`}>{t.tvShows}</button>
           </div>
-          <CustomSelect
-            value={sortBy}
-            options={sortOptions}
-            onChange={setSortBy}
-            ariaLabel={t.byDateAdded}
-            className="w-full md:w-auto"
-          />
         </div>
       </div>
 
-      <div className="flex gap-3 overflow-x-auto no-scrollbar">
-        {(libraryType === 'movie' ? MOVIE_STATUSES : TV_STATUSES).map(s => {
-          const count = library.filter(x => x.mediaType === libraryType && x.status === s.id).length;
-          return (
-            <button key={s.id} onClick={() => setShelf(s.id)}
-              className={`shelf-pill ${shelf === s.id ? 'active' : ''}`}>
-              {s.label} ({count})
+      <div className="catalog-controls">
+        <div className="relative">
+          <input
+            type="text"
+            placeholder={libraryType === 'movie' ? t.searchMovies : t.searchTv}
+            value={libraryQuery}
+            onChange={(event) => setLibraryQuery(event.target.value)}
+            className="app-input w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 pr-12 text-sm font-bold placeholder-white/30 focus:outline-none"
+          />
+          {libraryQuery && (
+            <button
+              type="button"
+              onClick={() => setLibraryQuery('')}
+              className="absolute right-4 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/60 hover:text-white text-sm font-black transition-all"
+              aria-label={t.clearSearch}
+            >
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
             </button>
-          );
-        })}
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+          <div>
+            <CustomSelect
+              value={shelf}
+              options={statusOptions}
+              onChange={setShelf}
+              ariaLabel={t.filterStatusLabel || t.shelf}
+            />
+          </div>
+          <div>
+            <CustomSelect
+              value={selectedGenre}
+              options={genreOptions}
+              onChange={setSelectedGenre}
+              ariaLabel={t.filterGenreLabel || t.allGenres}
+            />
+          </div>
+          <div>
+            <CustomSelect
+              value={selectedYear}
+              options={yearOptions}
+              onChange={setSelectedYear}
+              ariaLabel={t.filterYearLabel || t.allYears}
+            />
+          </div>
+          <div>
+            <CustomSelect
+              value={selectedReleaseFilter}
+              options={releaseFilterOptions}
+              onChange={setSelectedReleaseFilter}
+              ariaLabel={t.filterReleaseLabel || t.releaseAll}
+            />
+          </div>
+          <div>
+            <CustomSelect
+              value={sortBy}
+              options={sortOptions}
+              onChange={setSortBy}
+              ariaLabel={t.filterSortLabel || t.byDateAdded}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 text-xs opacity-65">
+          <p>{filteredShown.length} / {shown.length}</p>
+          {hasActiveLocalFilters && (
+            <button
+              type="button"
+              onClick={resetLocalFilters}
+              className="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition-all"
+            >
+              {t.resetCatalogFilters || t.clearSearch}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        {shown.map((item, i) => {
+        {filteredShown.map((item, i) => {
           const displayTitle = pickDisplayTitle(item, lang);
           const epProgress = (() => {
             if (item.mediaType !== 'tv') return null;
@@ -148,17 +384,27 @@ export default function LibraryView({
         })}
       </div>
 
-      {shown.length === 0 && (
+      {filteredShown.length === 0 && (
         <div className="empty-state">
           <div className="empty-state-icon" aria-hidden="true">{'\u{1F3AC}'}</div>
           <p className="empty-state-title">{t.emptyShelfHint || t.empty}</p>
           <p className="empty-state-hint">{t.catalogEmptyHint || t.empty}</p>
-          <button
-            onClick={() => setActiveTab?.('catalog')}
-            className="empty-state-action"
-          >
-            {t.goToCatalog || t.search}
-          </button>
+          {hasActiveLocalFilters ? (
+            <button
+              type="button"
+              onClick={resetLocalFilters}
+              className="empty-state-action"
+            >
+              {t.resetCatalogFilters || t.clearSearch}
+            </button>
+          ) : (
+            <button
+              onClick={() => setActiveTab?.('catalog')}
+              className="empty-state-action"
+            >
+              {t.goToCatalog || t.search}
+            </button>
+          )}
         </div>
       )}
     </div>
