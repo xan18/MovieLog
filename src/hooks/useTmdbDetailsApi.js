@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { tmdbFetchJson, tmdbFetchManyJson } from '../services/tmdb.js';
 import {
   getEpisodeMarker,
@@ -195,6 +195,9 @@ export function useTmdbDetailsApi({
   networkErrorMessage,
   onError,
 }) {
+  const activeDetailsRequestRef = useRef(0);
+  const activePersonRequestRef = useRef(0);
+
   const notifyError = useCallback((context, error) => {
     const message = error?.message || networkErrorMessage;
     console.error(context, error);
@@ -285,6 +288,22 @@ export function useTmdbDetailsApi({
   }, [library, setLibrary, TMDB_LANG]);
 
   const getFullDetails = useCallback(async (item) => {
+    if (!item?.id || !item?.mediaType) return;
+
+    const requestId = ++activeDetailsRequestRef.current;
+    const libEntry = library.find((entry) => entry.mediaType === item.mediaType && entry.id === item.id);
+
+    setSeasonEpisodes({});
+    setSelectedItem({
+      ...item,
+      mediaType: item.mediaType,
+      rating: libEntry?.rating || 0,
+      watchedEpisodes: libEntry?.watchedEpisodes || {},
+      seasonRatings: libEntry?.seasonRatings || {},
+      detailsLoading: true,
+      detailsExtrasLoading: false,
+    });
+
     try {
       const [detail, credits, videos, recs] = await tmdbFetchManyJson([
         { path: `/${item.mediaType}/${item.id}`, params: { language: TMDB_LANG } },
@@ -293,100 +312,9 @@ export function useTmdbDetailsApi({
         { path: `/${item.mediaType}/${item.id}/recommendations`, params: { language: TMDB_LANG } },
       ]);
 
+      if (activeDetailsRequestRef.current !== requestId) return;
+
       const trailer = (videos?.results || []).find((video) => video.type === 'Trailer' && video.site === 'YouTube');
-      const libEntry = library.find((entry) => entry.mediaType === item.mediaType && entry.id === item.id);
-
-      let collectionParts = null;
-      if (item.mediaType === 'movie' && detail.belongs_to_collection) {
-        try {
-          const colData = await tmdbFetchJson(
-            `/collection/${detail.belongs_to_collection.id}`,
-            { language: TMDB_LANG }
-          );
-          if (colData?.parts) {
-            collectionParts = {
-              name: colData.name,
-              parts: colData.parts.sort(
-                (a, b) => (a.release_date || '9999').localeCompare(b.release_date || '9999')
-              ),
-            };
-          }
-        } catch (error) {
-          console.warn(`Failed to load collection parts for movie ${item.id}`, error);
-        }
-      }
-
-      let relatedShows = null;
-      if (item.mediaType === 'tv') {
-        try {
-          const keywordsData = await tmdbFetchJson(`/tv/${item.id}/keywords`);
-          const rawKeywords = (keywordsData?.results || []).filter((keyword) => keyword?.id && keyword?.name);
-
-          const genericKeywordPatterns = [
-            /^(tv|television|series|show|drama|comedy|thriller|mystery)$/i,
-            /^(miniseries|mini[- ]?series)$/i,
-            /^(based on (a )?(novel|book|comic|manga))$/i,
-            /^(female protagonist|male protagonist)$/i,
-            /^(period drama|historical fiction)$/i,
-          ];
-
-          const filteredKeywords = rawKeywords
-            .filter((keyword) => !genericKeywordPatterns.some((regex) => regex.test(keyword.name.trim())))
-            .slice(0, 8);
-
-          const keywordLists = await Promise.all(
-            filteredKeywords.map(async (keyword) => {
-              try {
-                const data = await tmdbFetchJson(
-                  `/keyword/${keyword.id}/tv`,
-                  { language: TMDB_LANG, page: 1 }
-                );
-                return { keyword, data };
-              } catch (error) {
-                console.warn(`Failed to load keyword list ${keyword.id} for tv ${item.id}`, error);
-                return null;
-              }
-            })
-          );
-
-          const scored = new Map();
-          keywordLists.filter(Boolean).forEach(({ data }) => {
-            const total = Number(data?.total_results || 0);
-            if (total < 2 || total > 12) return;
-
-            (data?.results || []).forEach((show) => {
-              if (!show?.id || show.id === detail.id) return;
-              const previous = scored.get(show.id) || { ...show, score: 0 };
-              previous.score += 1;
-              scored.set(show.id, previous);
-            });
-          });
-
-          const relatedOnly = Array.from(scored.values())
-            .filter((show) => show.score > 0)
-            .sort(
-              (a, b) => (b.score - a.score)
-                || (a.first_air_date || '9999').localeCompare(b.first_air_date || '9999')
-            )
-            .slice(0, 20);
-
-          if (relatedOnly.length > 0) {
-            relatedShows = [
-              {
-                id: detail.id,
-                name: detail.name,
-                poster_path: detail.poster_path,
-                first_air_date: detail.first_air_date,
-                vote_average: detail.vote_average,
-              },
-              ...relatedOnly,
-            ];
-          }
-        } catch (error) {
-          console.warn(`Failed to load related shows for tv ${item.id}`, error);
-        }
-      }
-
       if (item.mediaType === 'tv' && libEntry) {
         const previousTotalEpisodes = getTvTotalEpisodes(libEntry);
         const freshTotalEpisodes = getTvTotalEpisodes(detail, libEntry);
@@ -452,30 +380,176 @@ export function useTmdbDetailsApi({
         }
       }
 
-      setSelectedItem({
-        ...detail,
-        mediaType: item.mediaType,
-        credits,
-        trailer: trailer?.key || null,
-        recommendations: (recs?.results || []).slice(0, 10),
-        rating: libEntry?.rating || 0,
-        watchedEpisodes: libEntry?.watchedEpisodes || {},
-        seasonRatings: libEntry?.seasonRatings || {},
-        collectionParts,
-        relatedShows,
+      const shouldHydrateExtras = (
+        (item.mediaType === 'movie' && Boolean(detail.belongs_to_collection?.id))
+        || item.mediaType === 'tv'
+      );
+
+      setSelectedItem((prev) => {
+        if (!prev || prev.mediaType !== item.mediaType || prev.id !== item.id) return prev;
+        return {
+          ...detail,
+          mediaType: item.mediaType,
+          credits,
+          trailer: trailer?.key || null,
+          recommendations: (recs?.results || []).slice(0, 10),
+          rating: libEntry?.rating || 0,
+          watchedEpisodes: libEntry?.watchedEpisodes || {},
+          seasonRatings: libEntry?.seasonRatings || {},
+          collectionParts: null,
+          relatedShows: null,
+          detailsLoading: false,
+          detailsExtrasLoading: shouldHydrateExtras,
+        };
       });
-      setSeasonEpisodes({});
+
+      if (!shouldHydrateExtras) return;
+
+      void (async () => {
+        let collectionParts = null;
+        let relatedShows = null;
+
+        if (item.mediaType === 'movie' && detail.belongs_to_collection) {
+          try {
+            const colData = await tmdbFetchJson(
+              `/collection/${detail.belongs_to_collection.id}`,
+              { language: TMDB_LANG }
+            );
+            if (colData?.parts) {
+              collectionParts = {
+                name: colData.name,
+                parts: colData.parts.sort(
+                  (a, b) => (a.release_date || '9999').localeCompare(b.release_date || '9999')
+                ),
+              };
+            }
+          } catch (error) {
+            console.warn(`Failed to load collection parts for movie ${item.id}`, error);
+          }
+        }
+
+        if (item.mediaType === 'tv') {
+          try {
+            const keywordsData = await tmdbFetchJson(`/tv/${item.id}/keywords`);
+            const rawKeywords = (keywordsData?.results || []).filter((keyword) => keyword?.id && keyword?.name);
+
+            const genericKeywordPatterns = [
+              /^(tv|television|series|show|drama|comedy|thriller|mystery)$/i,
+              /^(miniseries|mini[- ]?series)$/i,
+              /^(based on (a )?(novel|book|comic|manga))$/i,
+              /^(female protagonist|male protagonist)$/i,
+              /^(period drama|historical fiction)$/i,
+            ];
+
+            const filteredKeywords = rawKeywords
+              .filter((keyword) => !genericKeywordPatterns.some((regex) => regex.test(keyword.name.trim())))
+              .slice(0, 8);
+
+            const keywordLists = await Promise.all(
+              filteredKeywords.map(async (keyword) => {
+                try {
+                  const data = await tmdbFetchJson(
+                    `/keyword/${keyword.id}/tv`,
+                    { language: TMDB_LANG, page: 1 }
+                  );
+                  return { keyword, data };
+                } catch (error) {
+                  console.warn(`Failed to load keyword list ${keyword.id} for tv ${item.id}`, error);
+                  return null;
+                }
+              })
+            );
+
+            const scored = new Map();
+            keywordLists.filter(Boolean).forEach(({ data }) => {
+              const total = Number(data?.total_results || 0);
+              if (total < 2 || total > 12) return;
+
+              (data?.results || []).forEach((show) => {
+                if (!show?.id || show.id === detail.id) return;
+                const previous = scored.get(show.id) || { ...show, score: 0 };
+                previous.score += 1;
+                scored.set(show.id, previous);
+              });
+            });
+
+            const relatedOnly = Array.from(scored.values())
+              .filter((show) => show.score > 0)
+              .sort(
+                (a, b) => (b.score - a.score)
+                  || (a.first_air_date || '9999').localeCompare(b.first_air_date || '9999')
+              )
+              .slice(0, 20);
+
+            if (relatedOnly.length > 0) {
+              relatedShows = [
+                {
+                  id: detail.id,
+                  name: detail.name,
+                  poster_path: detail.poster_path,
+                  first_air_date: detail.first_air_date,
+                  vote_average: detail.vote_average,
+                },
+                ...relatedOnly,
+              ];
+            }
+          } catch (error) {
+            console.warn(`Failed to load related shows for tv ${item.id}`, error);
+          }
+        }
+
+        if (activeDetailsRequestRef.current !== requestId) return;
+
+        setSelectedItem((prev) => {
+          if (!prev || prev.mediaType !== item.mediaType || prev.id !== item.id) return prev;
+          return {
+            ...prev,
+            collectionParts,
+            relatedShows,
+            detailsExtrasLoading: false,
+          };
+        });
+      })();
     } catch (error) {
+      if (activeDetailsRequestRef.current === requestId) {
+        setSelectedItem((prev) => {
+          if (!prev || prev.mediaType !== item.mediaType || prev.id !== item.id) return prev;
+          return {
+            ...prev,
+            detailsLoading: false,
+            detailsExtrasLoading: false,
+          };
+        });
+      }
       notifyError(`Failed to load details for ${item.mediaType}:${item.id}`, error);
     }
   }, [TMDB_LANG, library, notifyError, setLibrary, setSeasonEpisodes, setSelectedItem]);
 
   const getPersonDetails = useCallback(async (personId) => {
+    if (!personId) return;
+
+    const requestId = ++activePersonRequestRef.current;
+    setSelectedPerson((prev) => (
+      prev?.id === personId
+        ? { ...prev, isLoading: true }
+        : {
+          id: personId,
+          name: '',
+          isLoading: true,
+          allMovies: [],
+          filmographyGroups: [],
+          moviesInLibrary: [],
+          avgRating: 0,
+        }
+    ));
+
     try {
       const [person, credits] = await tmdbFetchManyJson([
         { path: `/person/${personId}`, params: { language: TMDB_LANG } },
         { path: `/person/${personId}/combined_credits`, params: { language: TMDB_LANG } },
       ]);
+
+      if (activePersonRequestRef.current !== requestId) return;
 
       const castCredits = (credits?.cast || [])
         .filter((item) => item?.id && (item.media_type === 'movie' || item.media_type === 'tv'))
@@ -518,14 +592,24 @@ export function useTmdbDetailsApi({
         ? (ratedInLib.reduce((sum, movie) => sum + movie.rating, 0) / ratedInLib.length).toFixed(1)
         : 0;
 
-      setSelectedPerson({
-        ...person,
-        allMovies: uniqueContent,
-        filmographyGroups,
-        moviesInLibrary,
-        avgRating: Number.isNaN(Number(avgRating)) ? 0 : avgRating,
+      setSelectedPerson((prev) => {
+        if (!prev || prev.id !== personId) return prev;
+        return {
+          ...person,
+          allMovies: uniqueContent,
+          filmographyGroups,
+          moviesInLibrary,
+          avgRating: Number.isNaN(Number(avgRating)) ? 0 : avgRating,
+          isLoading: false,
+        };
       });
     } catch (error) {
+      if (activePersonRequestRef.current === requestId) {
+        setSelectedPerson((prev) => {
+          if (!prev || prev.id !== personId) return prev;
+          return { ...prev, isLoading: false };
+        });
+      }
       notifyError(`Failed to load person details for ${personId}`, error);
     }
   }, [TMDB_LANG, library, notifyError, setSelectedPerson]);

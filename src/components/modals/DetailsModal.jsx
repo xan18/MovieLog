@@ -55,6 +55,8 @@ export default function DetailsModal({
 
   if (!selectedItem) return null;
 
+  const isDetailsLoading = Boolean(selectedItem.detailsLoading);
+  const isDetailsExtrasLoading = Boolean(selectedItem.detailsExtrasLoading);
   const hasBackdrop = Boolean(selectedItem.backdrop_path);
   const displayTitle = selectedItem.title || selectedItem.name;
   const originalTitle = (
@@ -244,7 +246,7 @@ export default function DetailsModal({
 
   const renderActors = () => (
     <section className="space-y-4">
-      {!cast.length && <p className="text-sm opacity-60">No cast data.</p>}
+      {!cast.length && <p className="text-sm opacity-60">{isDetailsLoading ? (t.loading || 'Loading...') : 'No cast data.'}</p>}
       {cast.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {cast.map(actor => (
@@ -283,7 +285,9 @@ export default function DetailsModal({
         </div>
       ))}
 
-      {creators.length === 0 && crewGroups.length === 0 && <p className="text-sm opacity-60">No crew data.</p>}
+      {creators.length === 0 && crewGroups.length === 0 && (
+        <p className="text-sm opacity-60">{isDetailsLoading ? (t.loading || 'Loading...') : 'No crew data.'}</p>
+      )}
     </section>
   );
 
@@ -300,7 +304,9 @@ export default function DetailsModal({
           </div>
         </>
       ) : (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center"><p className="text-sm opacity-70">Trailer is not available for this title.</p></div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center">
+          <p className="text-sm opacity-70">{isDetailsLoading ? (t.loading || 'Loading...') : 'Trailer is not available for this title.'}</p>
+        </div>
       )}
     </section>
   );
@@ -310,7 +316,7 @@ export default function DetailsModal({
 
     const filteredSeasons = (selectedItem.seasons || []).filter(s => s.season_number > 0);
     if (filteredSeasons.length === 0) {
-      return <p className="text-sm opacity-60">No season data.</p>;
+      return <p className="text-sm opacity-60">{isDetailsLoading ? (t.loading || 'Loading...') : 'No season data.'}</p>;
     }
 
     const libEntry = getLibraryEntry('tv', selectedItem.id);
@@ -489,6 +495,12 @@ export default function DetailsModal({
 
           <div className="details-content p-6 md:p-10 space-y-6 md:space-y-7 relative z-10">
             {!hasBackdrop && renderHeroHead('details-hero-head-flat')}
+
+            {(isDetailsLoading || isDetailsExtrasLoading) && (
+              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-bold uppercase tracking-widest opacity-80">
+                {isDetailsLoading ? (t.loading || 'Loading...') : (t.loading || 'Loading...')}
+              </div>
+            )}
 
             <div className={`details-tabs-wrap ${hasBackdrop ? 'hero-tight' : ''}`}>
               <div className="details-tabs" role="tablist" aria-label="Details sections">

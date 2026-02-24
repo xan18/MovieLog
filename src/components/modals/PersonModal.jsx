@@ -17,6 +17,8 @@ export default function PersonModal({
   if (!selectedPerson) return null;
 
   const handleClose = onClose || (() => setSelectedPerson(null));
+  const isPersonLoading = Boolean(selectedPerson.isLoading);
+  const personDisplayName = selectedPerson.name || (isPersonLoading ? (t.loading || 'Loading...') : '\u2014');
   const libraryIndex = new Map(
     (Array.isArray(library) ? library : []).map((item) => [`${item.mediaType}-${item.id}`, item])
   );
@@ -77,7 +79,10 @@ export default function PersonModal({
             <div className="flex items-start gap-6">
               {selectedPerson.profile_path && <LazyImg src={`${IMG_500}${selectedPerson.profile_path}`} className="w-32 md:w-40 aspect-[2/3] object-cover rounded-2xl shadow-2xl flex-shrink-0" alt={selectedPerson.name} />}
               <div className="flex-1">
-                <h2 className="text-3xl md:text-4xl font-black mb-4">{selectedPerson.name}</h2>
+                <h2 className="text-3xl md:text-4xl font-black mb-4">{personDisplayName}</h2>
+                {isPersonLoading && (
+                  <p className="text-xs uppercase tracking-widest opacity-60 mb-3">{t.loading || 'Loading...'}</p>
+                )}
                 {selectedPerson.biography && <p className="text-sm opacity-80 mb-4 line-clamp-3 font-normal">{selectedPerson.biography}</p>}
                 <div className="flex flex-wrap gap-4 text-sm font-medium">
                   {selectedPerson.birthday && <span className="opacity-60">{'\u{1F382}'} {new Date(selectedPerson.birthday).toLocaleDateString(DATE_LOCALE)}</span>}
