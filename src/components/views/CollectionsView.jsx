@@ -1335,7 +1335,7 @@ export default function CollectionsView({
             </div>
           )}
 
-          {recommendationsLoading && (
+          {recommendationsLoading && visibleRecommendations.length === 0 && (
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
               {Array.from({ length: 10 }).map((_, index) => (
                 <div key={`for-you-skeleton-${index}`} className="media-card">
@@ -1365,7 +1365,7 @@ export default function CollectionsView({
             </div>
           )}
 
-          {!recommendationsLoading && visibleRecommendations.length > 0 && (
+          {visibleRecommendations.length > 0 && (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
                 {visibleRecommendations.map((item) => {

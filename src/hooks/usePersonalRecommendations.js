@@ -50,8 +50,8 @@ export function usePersonalRecommendations({
   );
 
   useEffect(() => {
-    setVisibleCount(pageSize);
-  }, [cacheKey, pageSize]);
+    setVisibleCount((prev) => (prev < pageSize ? pageSize : prev));
+  }, [pageSize]);
 
   const refresh = useCallback(() => {
     clearPersonalRecommendationsCache(cacheKey);
