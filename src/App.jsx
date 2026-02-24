@@ -108,6 +108,7 @@ export default function App() {
     authNotice,
     signIn,
     signUp,
+    updateProfile,
     signOut,
   } = useAuthSession({
     supabaseClient: supabase,
@@ -117,6 +118,33 @@ export default function App() {
   });
 
   const currentUserId = session?.user?.id || null;
+  const currentUserProfile = useMemo(() => {
+    const metadata = session?.user?.user_metadata || {};
+    return {
+      nickname: typeof metadata.nickname === 'string' ? metadata.nickname : '',
+      avatarUrl: typeof metadata.avatar_url === 'string' ? metadata.avatar_url : '',
+      bio: typeof metadata.bio === 'string' ? metadata.bio : '',
+      preferredLanguage: typeof metadata.preferred_language === 'string' ? metadata.preferred_language : '',
+      email: session?.user?.email || '',
+    };
+  }, [session?.user?.email, session?.user?.user_metadata]);
+
+  const headerUserLabel = currentUserProfile.nickname || currentUserProfile.email;
+
+  useEffect(() => {
+    const preferredLanguage = currentUserProfile.preferredLanguage;
+    if (preferredLanguage === 'ru' || preferredLanguage === 'en') {
+      setLang((prev) => (prev === preferredLanguage ? prev : preferredLanguage));
+    }
+  }, [currentUserProfile.preferredLanguage, setLang]);
+
+  const saveUserProfile = useCallback(async (profilePayload) => (
+    updateProfile({
+      ...profilePayload,
+      preferredLanguage: lang,
+    })
+  ), [lang, updateProfile]);
+
   const { cloudSyncError } = useCloudLibrarySync({
     enabled: isSupabaseConfigured && Boolean(supabase),
     supabaseClient: supabase,
@@ -499,6 +527,8 @@ export default function App() {
     return (
       <AuthView
         t={t}
+        lang={lang}
+        setLang={setLang}
         mode={authMode}
         onModeChange={setAuthMode}
         onSignIn={signIn}
@@ -545,7 +575,7 @@ export default function App() {
             ))}
           </div>
           <span className="hidden xl:block text-xs opacity-55 max-w-[220px] truncate">
-            {session.user.email}
+            {headerUserLabel}
           </span>
           <button
             type="button"
@@ -647,6 +677,10 @@ export default function App() {
         <SettingsView
           library={library} setLibrary={setLibrary}
           currentUserId={currentUserId}
+          authUser={session.user}
+          userProfile={currentUserProfile}
+          onSaveProfile={saveUserProfile}
+          profileSaving={authBusy}
           t={t}
           theme={theme} setTheme={setTheme}
           lang={lang} setLang={setLang}

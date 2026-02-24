@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 
+const SUPPORTED_LANGS = new Set(['ru', 'en']);
+
+function normalizeProfileString(value, maxLength = 300) {
+  if (typeof value !== 'string') return '';
+  return value.trim().slice(0, maxLength);
+}
+
 export function useAuthSession({
   supabaseClient,
   isConfigured,
@@ -75,17 +82,32 @@ export function useAuthSession({
     }
   }, [supabaseClient]);
 
-  const signUp = useCallback(async (email, password) => {
+  const signUp = useCallback(async (payloadOrEmail, legacyPassword) => {
     if (!supabaseClient) return;
     setAuthBusy(true);
     setAuthError('');
     setAuthNotice('');
 
     try {
+      const isObjectPayload = payloadOrEmail && typeof payloadOrEmail === 'object';
+      const email = String(isObjectPayload ? payloadOrEmail.email : payloadOrEmail || '').trim();
+      const password = String(isObjectPayload ? payloadOrEmail.password : legacyPassword || '');
+      const nickname = normalizeProfileString(isObjectPayload ? payloadOrEmail.nickname : '', 48);
+      const preferredLanguage = isObjectPayload ? payloadOrEmail.preferredLanguage : '';
+      const signUpMetadata = {};
+
+      if (nickname) signUpMetadata.nickname = nickname;
+      if (SUPPORTED_LANGS.has(preferredLanguage)) {
+        signUpMetadata.preferred_language = preferredLanguage;
+      }
+
       const { data, error } = await supabaseClient.auth.signUp({
         email,
         password,
-        options: { emailRedirectTo: window.location.origin },
+        options: {
+          emailRedirectTo: window.location.origin,
+          ...(Object.keys(signUpMetadata).length > 0 ? { data: signUpMetadata } : {}),
+        },
       });
 
       if (error) {
@@ -100,6 +122,64 @@ export function useAuthSession({
       setAuthBusy(false);
     }
   }, [authCheckEmailNotice, supabaseClient]);
+
+  const updateProfile = useCallback(async ({
+    nickname,
+    avatarUrl,
+    bio,
+    preferredLanguage,
+  } = {}) => {
+    if (!supabaseClient) {
+      return { ok: false, error: 'Supabase is not configured.' };
+    }
+
+    const payload = {};
+
+    if (nickname !== undefined) {
+      const cleanNickname = normalizeProfileString(nickname, 48);
+      payload.nickname = cleanNickname || null;
+    }
+    if (avatarUrl !== undefined) {
+      const cleanAvatarUrl = normalizeProfileString(avatarUrl, 500);
+      payload.avatar_url = cleanAvatarUrl || null;
+    }
+    if (bio !== undefined) {
+      const cleanBio = normalizeProfileString(bio, 240);
+      payload.bio = cleanBio || null;
+    }
+    if (preferredLanguage !== undefined) {
+      payload.preferred_language = SUPPORTED_LANGS.has(preferredLanguage) ? preferredLanguage : null;
+    }
+
+    setAuthBusy(true);
+    setAuthError('');
+    setAuthNotice('');
+
+    try {
+      const { data, error } = await supabaseClient.auth.updateUser({
+        data: payload,
+      });
+
+      if (error) {
+        const message = error.message || 'Unable to update profile.';
+        setAuthError(message);
+        return { ok: false, error: message };
+      }
+
+      if (data?.user) {
+        setSession((prev) => (prev ? { ...prev, user: data.user } : prev));
+      }
+
+      return { ok: true, user: data?.user || null };
+    } catch (error) {
+      const message = error?.message || 'Unable to update profile.';
+      setAuthError(message);
+      console.error('Profile update failed', error);
+      return { ok: false, error: message };
+    } finally {
+      setAuthBusy(false);
+    }
+  }, [supabaseClient]);
 
   const signOut = useCallback(async () => {
     if (!supabaseClient) return;
@@ -126,6 +206,7 @@ export function useAuthSession({
     setAuthNotice,
     signIn,
     signUp,
+    updateProfile,
     signOut,
   };
 }

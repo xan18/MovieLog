@@ -23,6 +23,10 @@ const TMDB_LIBRARY_REFRESH_CHUNK_SIZE = 4;
 export default function SettingsView({
   library, setLibrary,
   currentUserId,
+  authUser,
+  userProfile,
+  onSaveProfile,
+  profileSaving = false,
   t,
   theme, setTheme,
   lang, setLang,
@@ -43,6 +47,10 @@ export default function SettingsView({
   const THEME_OPTIONS = getThemeOptions(t);
 
   const [notice, setNotice] = useState(null);
+  const [profileNickname, setProfileNickname] = useState(() => userProfile?.nickname || '');
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState(() => userProfile?.avatarUrl || '');
+  const [profileBio, setProfileBio] = useState(() => userProfile?.bio || '');
+  const [avatarPreviewBroken, setAvatarPreviewBroken] = useState(false);
   const [pendingImport, setPendingImport] = useState(null);
   const [hiddenForYouKeys, setHiddenForYouKeys] = useState([]);
   const [isHiddenForYouModalOpen, setHiddenForYouModalOpen] = useState(false);
@@ -83,6 +91,13 @@ export default function SettingsView({
   }, []);
 
   useEffect(() => {
+    setProfileNickname(userProfile?.nickname || '');
+    setProfileAvatarUrl(userProfile?.avatarUrl || '');
+    setProfileBio(userProfile?.bio || '');
+    setAvatarPreviewBroken(false);
+  }, [userProfile]);
+
+  useEffect(() => {
     setHiddenForYouKeys(readHiddenPersonalRecommendationKeys(currentUserId || 'anonymous'));
   }, [currentUserId, personalRecommendationsHiddenVersion]);
 
@@ -98,6 +113,25 @@ export default function SettingsView({
     () => t.forYouHiddenModalTitle || t.forYouHiddenListTitle || t.collectionsForYouTab,
     [t]
   );
+
+  const profileAvatarPreviewUrl = profileAvatarUrl.trim();
+  const normalizedSavedNickname = (userProfile?.nickname || '').trim();
+  const normalizedSavedAvatar = (userProfile?.avatarUrl || '').trim();
+  const normalizedSavedBio = (userProfile?.bio || '').trim();
+  const normalizedDraftNickname = profileNickname.trim();
+  const normalizedDraftAvatar = profileAvatarUrl.trim();
+  const normalizedDraftBio = profileBio.trim();
+  const profileHasChanges = (
+    normalizedDraftNickname !== normalizedSavedNickname
+    || normalizedDraftAvatar !== normalizedSavedAvatar
+    || normalizedDraftBio !== normalizedSavedBio
+  );
+  const profilePreviewName = normalizedDraftNickname
+    || normalizedSavedNickname
+    || authUser?.email?.split('@')?.[0]
+    || 'U';
+  const profileInitial = (profilePreviewName || 'U').slice(0, 1).toUpperCase();
+  const currentProfileLanguageLabel = lang === 'en' ? (t.langEn || 'English') : (t.langRu || 'Русский');
 
   useEffect(() => {
     if (!isHiddenForYouModalOpen) return;
@@ -197,6 +231,28 @@ export default function SettingsView({
     setHiddenForYouModalItems([]);
     onPersonalRecommendationsHiddenChanged?.();
     showNotice('success', t.forYouHiddenRestoreAllDone || t.fileSaved);
+  };
+
+  const saveProfile = async () => {
+    if (!onSaveProfile) return;
+
+    try {
+      const result = await onSaveProfile({
+        nickname: profileNickname,
+        avatarUrl: profileAvatarUrl,
+        bio: profileBio,
+      });
+
+      if (result?.ok) {
+        showNotice('success', t.profileSaveSuccess || t.fileSaved);
+        return;
+      }
+
+      showNotice('error', result?.error || t.profileSaveError || t.networkError);
+    } catch (error) {
+      console.error('Failed to save user profile', error);
+      showNotice('error', error?.message || t.profileSaveError || t.networkError);
+    }
   };
 
   const computeImportPreview = (incomingItems) => {
@@ -356,6 +412,109 @@ export default function SettingsView({
           {notice.text}
         </div>
       )}
+
+      <div className="glass app-panel">
+        <div className="settings-section-head p-5 border-b border-white/5">
+          <p className="text-sm font-black">{t.profileTitle || 'Профиль'}</p>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-2xl border border-white/10 bg-white/5 overflow-hidden shrink-0 flex items-center justify-center">
+              {profileAvatarPreviewUrl && !avatarPreviewBroken ? (
+                <img
+                  src={profileAvatarPreviewUrl}
+                  alt={profilePreviewName}
+                  className="w-full h-full object-cover"
+                  onError={() => setAvatarPreviewBroken(true)}
+                />
+              ) : (
+                <span className="text-xl font-black opacity-80">{profileInitial}</span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-black truncate">
+                {normalizedDraftNickname || authUser?.email || (t.profileNoNickname || 'User')}
+              </p>
+              <p className="text-xs opacity-55 truncate">{authUser?.email || ''}</p>
+              <p className="text-[10px] opacity-40 mt-1">
+                {(t.profileLanguageHint || 'Язык профиля')}: {currentProfileLanguageLabel}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label htmlFor="settings-profile-nickname" className="text-xs uppercase tracking-widest opacity-60 font-bold">
+                {t.profileNicknameLabel || t.authNickname || 'Nickname'}
+              </label>
+              <input
+                id="settings-profile-nickname"
+                type="text"
+                autoComplete="nickname"
+                maxLength={48}
+                value={profileNickname}
+                onChange={(event) => setProfileNickname(event.target.value)}
+                className="w-full h-[46px] rounded-xl bg-white/5 border border-white/10 px-4 outline-none focus:border-white/30"
+                placeholder={t.profileNicknamePlaceholder || t.authNicknamePlaceholder || 'Your nickname'}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="settings-profile-avatar-url" className="text-xs uppercase tracking-widest opacity-60 font-bold">
+                {t.profileAvatarUrlLabel || 'Avatar URL'}
+              </label>
+              <input
+                id="settings-profile-avatar-url"
+                type="url"
+                inputMode="url"
+                maxLength={500}
+                value={profileAvatarUrl}
+                onChange={(event) => {
+                  setProfileAvatarUrl(event.target.value);
+                  if (avatarPreviewBroken) setAvatarPreviewBroken(false);
+                }}
+                className="w-full h-[46px] rounded-xl bg-white/5 border border-white/10 px-4 outline-none focus:border-white/30"
+                placeholder={t.profileAvatarUrlPlaceholder || 'https://example.com/avatar.jpg'}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="settings-profile-bio" className="text-xs uppercase tracking-widest opacity-60 font-bold">
+              {t.profileBioLabel || 'About'}
+            </label>
+            <textarea
+              id="settings-profile-bio"
+              rows={3}
+              maxLength={240}
+              value={profileBio}
+              onChange={(event) => setProfileBio(event.target.value)}
+              className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 outline-none focus:border-white/30 resize-y min-h-[92px]"
+              placeholder={t.profileBioPlaceholder || 'Short bio'}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[10px] opacity-40 leading-relaxed">
+              {t.profileCloudHint || 'Профиль сохраняется в облачном аккаунте. Язык берется из текущих настроек интерфейса.'}
+            </p>
+            <button
+              type="button"
+              onClick={saveProfile}
+              disabled={profileSaving || !profileHasChanges}
+              className={`shrink-0 px-4 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all border ${
+                profileSaving || !profileHasChanges
+                  ? 'bg-white/5 border-white/5 text-white/40 cursor-not-allowed'
+                  : 'accent-soft'
+              }`}
+            >
+              {profileSaving
+                ? (t.profileSaving || t.loading)
+                : (t.profileSaveButton || t.save || 'Save')}
+            </button>
+          </div>
+        </div>
+      </div>
 
       <div className="glass app-panel">
         <div className="settings-section-head p-5 border-b border-white/5"><p className="text-sm font-black">{t.interfaceTitle}</p></div>
