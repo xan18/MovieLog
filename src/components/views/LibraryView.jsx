@@ -351,10 +351,15 @@ export default function LibraryView({
             if (totalCount === 0) return null;
             const remaining = totalCount - watchedCount;
             const pct = Math.round((watchedCount / totalCount) * 100);
-            const badge = remaining <= 0
-              ? { text: '\u2713', color: 'bg-green-600' }
-              : { text: `\u25B6 ${remaining}`, color: 'bg-white/80 text-black' };
-            return { badge, pct, done: remaining <= 0 };
+            const allTrackedWatched = remaining <= 0;
+            const isOngoingSeries = Boolean(item.in_production) || Boolean(item.next_episode_to_air);
+            const waitingForNewEpisodes = allTrackedWatched && isOngoingSeries;
+            const badge = allTrackedWatched
+              ? waitingForNewEpisodes
+                ? { text: '\u21BB', color: 'bg-sky-600', title: t.returning || t.inProduction || 'Ongoing (all aired watched)' }
+                : { text: '\u2713', color: 'bg-green-600', title: t.ended || 'Ended (completed)' }
+              : { text: `\u25B6 ${remaining}`, color: 'bg-white/80 text-black', title: `${remaining}` };
+            return { badge, pct, done: allTrackedWatched && !waitingForNewEpisodes, waitingForNewEpisodes };
           })();
           return (
             <div
@@ -370,7 +375,14 @@ export default function LibraryView({
               <div onClick={() => handleCardClick(item)} className="media-poster cursor-pointer">
                 <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'} className="w-full aspect-[2/3] object-cover transition-transform duration-300 group-hover:scale-[1.04]" alt={displayTitle} />
                 {item.rating > 0 && <div className="media-pill absolute top-2 right-2 bg-yellow-500 text-black">{'\u2605'} {item.rating}</div>}
-                {epProgress?.badge && <div className={`media-pill absolute top-2 left-2 ${epProgress.badge.color} shadow-lg`}>{epProgress.badge.text}</div>}
+                {epProgress?.badge && (
+                  <div
+                    className={`media-pill absolute top-2 left-2 ${epProgress.badge.color} shadow-lg`}
+                    title={epProgress.badge.title}
+                  >
+                    {epProgress.badge.text}
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={(e) => {
@@ -396,7 +408,11 @@ export default function LibraryView({
                     className="tv-progress-fill"
                     style={{
                       width: `${epProgress.pct}%`,
-                      background: epProgress.done ? 'rgb(34, 197, 94)' : 'rgb(59, 130, 246)',
+                      background: epProgress.done
+                        ? 'rgb(34, 197, 94)'
+                        : epProgress.waitingForNewEpisodes
+                          ? 'rgb(14, 165, 233)'
+                          : 'rgb(59, 130, 246)',
                     }}
                   />
                 </div>
