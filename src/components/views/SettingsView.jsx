@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { CustomSelect, LazyImg } from '../ui.jsx';
 import { IMG_500 } from '../../constants/appConstants.js';
 import { sanitizeLibraryData } from '../../utils/librarySanitizer.js';
@@ -835,15 +836,10 @@ export default function SettingsView({
 
       <div className="glass app-panel">
         <div className="settings-section-head p-5 border-b border-white/5"><p className="text-sm font-black">{t.aboutTitle}</p></div>
-        <div className="p-5 space-y-3">
-          <div className="flex items-center justify-between"><span className="text-xs opacity-50">{t.version}</span><span className="text-xs font-black">v27 Enhanced</span></div>
-          <div className="flex items-center justify-between"><span className="text-xs opacity-50">{t.dataSource}</span><span className="text-xs font-black">TMDB API</span></div>
-          <div className="flex items-center justify-between"><span className="text-xs opacity-50">{t.storage}</span><span className="text-xs font-black">{t.offline}</span></div>
-          <div className="pt-3 border-t border-white/5"><p className="text-[10px] opacity-30 text-center leading-relaxed">{t.aboutText}</p></div>
-        </div>
+        <div className="p-5" />
       </div>
 
-      {isHiddenForYouModalOpen && (
+      {isHiddenForYouModalOpen && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[220] flex items-center justify-center p-4" onClick={() => setHiddenForYouModalOpen(false)}>
           <div className="absolute inset-0 modal-overlay" />
           <div
@@ -970,7 +966,8 @@ export default function SettingsView({
               </>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
