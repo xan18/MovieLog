@@ -758,11 +758,16 @@ export default function CollectionsView({
               aria-label={t.authorModeToggleLabel || t.collectionsAuthorMode}
               title={t.authorModeToggleLabel || t.collectionsAuthorMode}
               onClick={() => setAuthorModeEnabled((prev) => !prev)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full border px-[2px] transition-colors ${
-                authorModeEnabled
-                  ? 'border-blue-300/70 bg-blue-500/60'
-                  : 'border-slate-400/45 bg-slate-900/60'
-              }`}
+              className="relative inline-flex h-6 w-11 items-center rounded-full border px-[2px] transition-colors"
+              style={authorModeEnabled
+                ? {
+                    borderColor: 'rgba(var(--accent-rgb), 0.62)',
+                    background: 'rgba(var(--accent-rgb), 0.38)',
+                  }
+                : {
+                    borderColor: 'rgba(148, 163, 184, 0.34)',
+                    background: 'rgba(255, 255, 255, 0.06)',
+                  }}
             >
               <span
                 className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
