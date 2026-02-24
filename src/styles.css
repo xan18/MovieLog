@@ -2010,6 +2010,208 @@ html, body { overflow-x: hidden; }
     .theme-light .season-card[open] .season-summary {
       background: rgba(15, 23, 42, 0.05);
     }
+
+    .person-filmography-mobile-list {
+      display: grid;
+      gap: 10px;
+    }
+    .person-filmography-mobile-item {
+      display: block;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      border-radius: 20px;
+      background: linear-gradient(108deg, rgba(30, 41, 59, 0.48), rgba(15, 23, 42, 0.64));
+      overflow: hidden;
+      transition: border-color 0.18s ease, background 0.2s ease, box-shadow 0.2s ease, transform 0.12s ease;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    .person-filmography-mobile-item:hover {
+      border-color: rgba(var(--accent-rgb), 0.38);
+      background: linear-gradient(108deg, rgba(30, 41, 59, 0.6), rgba(15, 23, 42, 0.76));
+      box-shadow: 0 14px 28px rgba(2, 6, 23, 0.26);
+    }
+    .person-filmography-mobile-item:active {
+      transform: translateY(1px);
+    }
+    .person-filmography-mobile-item:focus-visible {
+      outline: 2px solid rgba(var(--accent-rgb), 0.85);
+      outline-offset: 2px;
+    }
+    .person-filmography-mobile-main {
+      display: flex;
+      align-items: stretch;
+      gap: 8px;
+      min-height: 100px;
+    }
+    .person-filmography-mobile-poster-wrap {
+      width: 70px;
+      border-radius: 15px 0 0 15px;
+      overflow: hidden;
+      border-right: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(15, 23, 42, 0.45);
+      flex-shrink: 0;
+    }
+    .person-filmography-mobile-poster {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      aspect-ratio: 2 / 3;
+    }
+    .person-filmography-mobile-body {
+      flex: 1;
+      min-width: 0;
+      padding: 8px 10px 8px 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+    }
+    .person-filmography-mobile-title-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      min-width: 0;
+    }
+    .person-filmography-mobile-title {
+      flex: 1;
+      min-width: 0;
+      margin: 0;
+      font-size: 15px;
+      font-weight: 800;
+      line-height: 1.12;
+      letter-spacing: -0.01em;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .person-filmography-mobile-year {
+      flex-shrink: 0;
+      padding: 2px 7px;
+      border-radius: 9999px;
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      background: rgba(15, 23, 42, 0.22);
+      font-size: 10px;
+      font-weight: 800;
+      line-height: 1;
+      color: rgba(241, 245, 249, 0.78);
+    }
+    .person-filmography-mobile-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      font-size: 11px;
+      color: rgba(203, 213, 225, 0.62);
+    }
+    .person-filmography-mobile-type {
+      flex-shrink: 0;
+      font-weight: 700;
+      color: rgba(241, 245, 249, 0.84);
+    }
+    .person-filmography-mobile-dot {
+      flex-shrink: 0;
+      opacity: 0.45;
+    }
+    .person-filmography-mobile-role {
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .person-filmography-mobile-chips {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 1px;
+    }
+    .person-filmography-mobile-status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      max-width: 100%;
+      padding: 3px 7px;
+      border-radius: 9999px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      color: #fff;
+      font-size: 9px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      box-shadow: 0 6px 14px rgba(2, 6, 23, 0.18);
+    }
+    .person-filmography-mobile-status-chip-fallback {
+      background: rgba(34, 197, 94, 0.18);
+      border-color: rgba(34, 197, 94, 0.3);
+      color: rgb(74, 222, 128);
+    }
+    .person-filmography-mobile-rating-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 7px;
+      border-radius: 9999px;
+      border: 1px solid rgba(250, 204, 21, 0.26);
+      background: rgba(250, 204, 21, 0.12);
+      color: #fde68a;
+      font-size: 9px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: 0.03em;
+    }
+    .theme-light .person-filmography-mobile-item {
+      background: linear-gradient(108deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.9));
+      border-color: rgba(15, 23, 42, 0.14);
+    }
+    .theme-light .person-filmography-mobile-item:hover {
+      border-color: rgba(var(--accent-rgb), 0.34);
+      background: linear-gradient(108deg, rgba(255, 255, 255, 0.99), rgba(241, 245, 249, 0.97));
+      box-shadow: 0 12px 24px rgba(15, 23, 42, 0.14);
+    }
+    .theme-light .person-filmography-mobile-poster-wrap {
+      border-right-color: rgba(15, 23, 42, 0.14);
+      background: rgba(15, 23, 42, 0.08);
+    }
+    .theme-light .person-filmography-mobile-title {
+      color: #0f172a;
+    }
+    .theme-light .person-filmography-mobile-year {
+      border-color: rgba(15, 23, 42, 0.12);
+      background: rgba(15, 23, 42, 0.04);
+      color: rgba(15, 23, 42, 0.72);
+    }
+    .theme-light .person-filmography-mobile-meta {
+      color: rgba(30, 41, 59, 0.58);
+    }
+    .theme-light .person-filmography-mobile-type {
+      color: rgba(15, 23, 42, 0.82);
+    }
+    .theme-light .person-filmography-mobile-status-chip {
+      border-color: rgba(15, 23, 42, 0.08);
+      box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+    }
+    .theme-light .person-filmography-mobile-status-chip-fallback {
+      background: rgba(34, 197, 94, 0.14);
+      border-color: rgba(34, 197, 94, 0.24);
+      color: #16a34a;
+    }
+    .theme-light .person-filmography-mobile-rating-chip {
+      border-color: rgba(245, 158, 11, 0.24);
+      background: rgba(245, 158, 11, 0.12);
+      color: #b45309;
+    }
+
     @media (max-width: 640px) {
       .season-summary {
         min-height: 100px;
