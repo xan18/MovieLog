@@ -15,6 +15,7 @@ import { tmdbFetchManyJson } from './services/tmdb.js';
 import { hidePersonalRecommendationForUser } from './services/personalRecommendations.js';
 import { getMovieStatuses, getTvStatuses, getStatusBadgeConfig, getTvShowStatusMap, getCrewRoleMap } from './utils/statusConfig.js';
 import { isReleasedItem } from './utils/releaseUtils.js';
+import { buildWatchedEpisodes } from './utils/appUtils.js';
 import { sanitizeLibraryData } from './utils/librarySanitizer.js';
 import { STORAGE_KEY } from './constants/appConstants.js';
 import { I18N } from './i18n/translations.js';
@@ -352,7 +353,8 @@ export default function App() {
     const existing = getLibraryEntry(item.mediaType, item.id);
     const hasCredits = Boolean(existing?.credits);
     const hasTvCreators = item.mediaType !== 'tv' || Array.isArray(existing?.created_by);
-    if (hasCredits && hasTvCreators) return;
+    const hasTvSeasons = item.mediaType !== 'tv' || Array.isArray(existing?.seasons);
+    if (hasCredits && hasTvCreators && hasTvSeasons) return;
 
     try {
       const [detail, credits] = await tmdbFetchManyJson([
@@ -377,6 +379,14 @@ export default function App() {
 
         if (Array.isArray(detail.created_by)) {
           mergedEntry.created_by = detail.created_by;
+        }
+
+        if (
+          mergedEntry.mediaType === 'tv'
+          && mergedEntry.status === 'completed'
+          && Array.isArray(detail.seasons)
+        ) {
+          mergedEntry.watchedEpisodes = buildWatchedEpisodes(detail.seasons);
         }
 
         return mergedEntry;

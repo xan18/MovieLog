@@ -109,8 +109,11 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
         if (x.mediaType === 'tv' && x.id === tvId) {
           if (newStatus === 'completed' && !isReleasedItem(fullItem || x)) return x;
           const updated = { ...x, status: newStatus };
-          if (newStatus === 'completed' && fullItem?.seasons) {
-            updated.watchedEpisodes = buildWatchedEpisodes(fullItem.seasons);
+          const seasonsForCompletion = Array.isArray(fullItem?.seasons)
+            ? fullItem.seasons
+            : (Array.isArray(x?.seasons) ? x.seasons : null);
+          if (newStatus === 'completed' && seasonsForCompletion) {
+            updated.watchedEpisodes = buildWatchedEpisodes(seasonsForCompletion);
           }
           if (newStatus === 'planned') {
             updated.watchedEpisodes = {};
