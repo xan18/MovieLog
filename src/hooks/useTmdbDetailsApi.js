@@ -282,7 +282,7 @@ export function useTmdbDetailsApi({
     try {
       const [detail, credits, videos, recs] = await tmdbFetchManyJson([
         { path: `/${item.mediaType}/${item.id}`, params: { language: TMDB_LANG } },
-        { path: `/${item.mediaType}/${item.id}/credits` },
+        { path: `/${item.mediaType}/${item.id}/credits`, params: { language: TMDB_LANG } },
         { path: `/${item.mediaType}/${item.id}/videos`, params: { language: TMDB_LANG } },
         { path: `/${item.mediaType}/${item.id}/recommendations`, params: { language: TMDB_LANG } },
       ]);
