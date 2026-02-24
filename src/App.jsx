@@ -33,6 +33,34 @@ import DetailsModal from './components/modals/DetailsModal.jsx';
 import QuickActionsMenu from './components/modals/QuickActionsMenu.jsx';
 import PersonModal from './components/modals/PersonModal.jsx';
 
+const APP_TABS = ['catalog', 'library', 'collections', 'stats', 'settings'];
+const APP_TAB_SET = new Set(APP_TABS);
+const DEFAULT_APP_TAB = 'catalog';
+
+function isAppTab(tabId) {
+  return APP_TAB_SET.has(tabId);
+}
+
+function getDefaultAppTab(startTab) {
+  return isAppTab(startTab) ? startTab : DEFAULT_APP_TAB;
+}
+
+function getAppTabFromHash() {
+  if (typeof window === 'undefined') return null;
+  const rawHash = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
+  return isAppTab(rawHash) ? rawHash : null;
+}
+
+function replaceHashWithTab(tabId) {
+  if (typeof window === 'undefined' || !isAppTab(tabId)) return;
+
+  const nextHash = `#/${tabId}`;
+  if (window.location.hash === nextHash) return;
+
+  const nextUrl = `${window.location.pathname}${window.location.search}${nextHash}`;
+  window.history.replaceState(window.history.state, '', nextUrl);
+}
+
 /* Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Main App Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ */
 export default function App() {
   const {
@@ -64,13 +92,23 @@ export default function App() {
   const [globalError, setGlobalError] = useState('');
 
   // Navigation & UI state
-  const [activeTab, setActiveTab] = useState(startTab);
+  const [activeTab, setActiveTabState] = useState(() => getAppTabFromHash() || getDefaultAppTab(startTab));
   const [statsView, setStatsView] = useState('statistics');
   const [peopleView, setPeopleView] = useState('directors');
   const [libraryType, setLibraryType] = useState('movie');
   const [shelf, setShelf] = useState('planned');
   const [sortBy, setSortBy] = useState(librarySortDefault);
   const [showScrollTop, setShowScrollTop] = useState(false);
+
+  const setActiveTab = useCallback((tabId) => {
+    if (!isAppTab(tabId)) return;
+
+    setActiveTabState((prev) => (prev === tabId ? prev : tabId));
+
+    if (typeof window !== 'undefined' && window.location.hash !== `#/${tabId}`) {
+      window.location.hash = `/${tabId}`;
+    }
+  }, []);
 
   // Modal & detail state
   const [selectedItem, setSelectedItem] = useState(null);
@@ -92,6 +130,24 @@ export default function App() {
   useEffect(() => {
     selectedItemRef.current = selectedItem;
   }, [selectedItem]);
+
+  useEffect(() => {
+    const syncActiveTabFromUrl = () => {
+      const tabFromHash = getAppTabFromHash();
+      if (tabFromHash) {
+        setActiveTabState((prev) => (prev === tabFromHash ? prev : tabFromHash));
+        return;
+      }
+
+      const fallbackTab = getDefaultAppTab(startTab);
+      setActiveTabState((prev) => (prev === fallbackTab ? prev : fallbackTab));
+      replaceHashWithTab(fallbackTab);
+    };
+
+    syncActiveTabFromUrl();
+    window.addEventListener('hashchange', syncActiveTabFromUrl);
+    return () => window.removeEventListener('hashchange', syncActiveTabFromUrl);
+  }, [startTab]);
 
   const handleSignedOut = useCallback(() => {
     setLibrary([]);
