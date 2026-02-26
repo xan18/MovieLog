@@ -24,16 +24,17 @@ const getSeasonsFromCandidates = (candidates) => {
   return null;
 };
 
-const buildFullWatchedEpisodesFromSeasons = (seasons) => (
-  seasons.reduce((acc, season) => {
+const buildFullWatchedEpisodesFromSeasons = (seasons) => {
+  if (!Array.isArray(seasons)) return {};
+  return seasons.reduce((acc, season) => {
     const seasonNumber = Number(season?.season_number);
     const episodeCount = Number(season?.episode_count);
     if (!Number.isInteger(seasonNumber) || seasonNumber <= 0) return acc;
     if (!Number.isInteger(episodeCount) || episodeCount <= 0) return acc;
     acc[seasonNumber] = Array.from({ length: episodeCount }, (_, idx) => idx + 1);
     return acc;
-  }, {})
-);
+  }, {});
+};
 
 const buildWatchedEpisodesUpToMarker = (seasons, marker) => {
   const markerSeason = Number(marker?.season_number);

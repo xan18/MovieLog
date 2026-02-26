@@ -19,6 +19,8 @@ const normalizeDateAdded = (value) => {
 const normalizeEpisodeMap = (map) => {
   if (!isObject(map)) return {};
   return Object.entries(map).reduce((acc, [season, episodes]) => {
+    const seasonNum = Number(season);
+    if (!Number.isInteger(seasonNum) || seasonNum <= 0) return acc;
     if (!Array.isArray(episodes)) return acc;
     const validEpisodes = Array.from(
       new Set(

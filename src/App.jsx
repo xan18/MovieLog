@@ -370,8 +370,8 @@ export default function App() {
       setSelectedItem(prev => {
         if (!prev) return prev;
         if (prev.rating === libEntry.rating &&
-            prev.watchedEpisodes === libEntry.watchedEpisodes &&
-            prev.seasonRatings === libEntry.seasonRatings) return prev;
+            JSON.stringify(prev.watchedEpisodes) === JSON.stringify(libEntry.watchedEpisodes) &&
+            JSON.stringify(prev.seasonRatings) === JSON.stringify(libEntry.seasonRatings)) return prev;
         return {
           ...prev,
           rating: libEntry.rating,
@@ -503,13 +503,13 @@ export default function App() {
     const released = isReleasedItem(item);
     if (action === 'planned') {
       addToLibrary(item, 'planned');
-      void hydrateQuickAddedItemForPeopleStats(item);
+      hydrateQuickAddedItemForPeopleStats(item).catch((e) => console.warn('hydrateQuickAdded failed', e));
       triggerAddPulse(`${item.mediaType}-${item.id}`);
     } else if (action === 'completed') {
       if (!released) return;
       const libEntry = getLibraryEntry('movie', item.id);
       addToLibrary(item, 'completed', 0, false);
-      void hydrateQuickAddedItemForPeopleStats(item);
+      hydrateQuickAddedItemForPeopleStats(item).catch((e) => console.warn('hydrateQuickAdded failed', e));
       triggerAddPulse(`${item.mediaType}-${item.id}`);
       setMovieRatingModal({ movieId: item.id, currentRating: libEntry?.rating || item.rating || 0, item });
     } else if (action === 'remove') {
@@ -523,7 +523,7 @@ export default function App() {
     const existing = getLibraryEntry('tv', item.id);
     if (!existing) addToLibrary(item, status, 0, false);
     else setTvStatus(item.id, status, item);
-    void hydrateQuickAddedItemForPeopleStats(item);
+    hydrateQuickAddedItemForPeopleStats(item).catch((e) => console.warn('hydrateQuickAdded failed', e));
     triggerAddPulse(`${item.mediaType}-${item.id}`);
     setQuickActions(null);
   }, [addToLibrary, getLibraryEntry, hydrateQuickAddedItemForPeopleStats, setTvStatus, triggerAddPulse]);

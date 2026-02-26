@@ -408,6 +408,7 @@ export function useTmdbDetailsApi({
       void (async () => {
         let collectionParts = null;
         let relatedShows = null;
+        try {
 
         if (item.mediaType === 'movie' && detail.belongs_to_collection) {
           try {
@@ -498,17 +499,26 @@ export function useTmdbDetailsApi({
           }
         }
 
-        if (activeDetailsRequestRef.current !== requestId) return;
+          if (activeDetailsRequestRef.current !== requestId) return;
 
-        setSelectedItem((prev) => {
-          if (!prev || prev.mediaType !== item.mediaType || prev.id !== item.id) return prev;
-          return {
-            ...prev,
-            collectionParts,
-            relatedShows,
-            detailsExtrasLoading: false,
-          };
-        });
+          setSelectedItem((prev) => {
+            if (!prev || prev.mediaType !== item.mediaType || prev.id !== item.id) return prev;
+            return {
+              ...prev,
+              collectionParts,
+              relatedShows,
+              detailsExtrasLoading: false,
+            };
+          });
+        } catch (error) {
+          console.warn(`Failed to load extras for ${item.mediaType}:${item.id}`, error);
+          if (activeDetailsRequestRef.current === requestId) {
+            setSelectedItem((prev) => {
+              if (!prev || prev.mediaType !== item.mediaType || prev.id !== item.id) return prev;
+              return { ...prev, detailsExtrasLoading: false };
+            });
+          }
+        }
       })();
     } catch (error) {
       if (activeDetailsRequestRef.current === requestId) {
