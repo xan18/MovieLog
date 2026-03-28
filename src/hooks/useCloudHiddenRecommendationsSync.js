@@ -9,6 +9,7 @@ import {
 const HIDDEN_RECOMMENDATIONS_TABLE = 'hidden_personal_recommendations';
 const POLL_INTERVAL_MS = 15 * 1000;
 const SCHEMA_MISSING_ERROR_CODE = '42P01';
+const HIDDEN_SYNC_META_PREFIX = 'movielog:personal-recommendations:hidden:cloud-sync:v1';
 
 const chunkArray = (arr, size) => {
   const chunks = [];
@@ -26,12 +27,44 @@ const toKeySet = (values = []) => new Set(
 
 const toSortedArray = (valueSet) => Array.from(valueSet).sort();
 
+const mergeKeySets = (...sets) => {
+  const merged = new Set();
+  sets.forEach((setValue) => {
+    if (!(setValue instanceof Set)) return;
+    setValue.forEach((key) => merged.add(key));
+  });
+  return merged;
+};
+
 const areSetsEqual = (left, right) => {
   if (left.size !== right.size) return false;
   for (const key of left) {
     if (!right.has(key)) return false;
   }
   return true;
+};
+
+const buildHiddenSyncMetaStorageKey = (userId) => {
+  const normalizedUserId = String(userId || 'anonymous').trim() || 'anonymous';
+  return `${HIDDEN_SYNC_META_PREFIX}:${normalizedUserId}`;
+};
+
+const hasHiddenCloudSyncSnapshot = (userId) => {
+  if (typeof window === 'undefined' || !window.localStorage) return false;
+  try {
+    return window.localStorage.getItem(buildHiddenSyncMetaStorageKey(userId)) === '1';
+  } catch {
+    return false;
+  }
+};
+
+const markHiddenCloudSyncSnapshot = (userId) => {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(buildHiddenSyncMetaStorageKey(userId), '1');
+  } catch {
+    // ignore localStorage failures
+  }
 };
 
 const fetchCloudHiddenRecommendationKeySet = async (supabaseClient, currentUserId) => {
@@ -81,7 +114,10 @@ const syncHiddenRecommendationKeySetToCloud = async ({
     for (const batch of chunkArray(rowsToUpsert, 200)) {
       const { error } = await supabaseClient
         .from(HIDDEN_RECOMMENDATIONS_TABLE)
-        .upsert(batch, { onConflict: 'user_id,media_type,tmdb_id' });
+        .insert(batch, {
+          onConflict: 'user_id,media_type,tmdb_id',
+          ignoreDuplicates: true,
+        });
       if (error) throw error;
     }
   }
@@ -134,25 +170,29 @@ export function useCloudHiddenRecommendationsSync({
         if (cancelled || currentRevision !== revisionRef.current) return;
 
         const localSet = toKeySet(readHiddenPersonalRecommendationKeys(currentUserId));
+        const hasCloudSnapshot = hasHiddenCloudSyncSnapshot(currentUserId);
+        const mergedSet = mergeKeySets(localSet, cloudSet);
+        const nextCloudSet = hasCloudSnapshot
+          ? (cloudSet.size === 0 && localSet.size > 0 ? localSet : cloudSet)
+          : mergedSet;
+        const nextLocalSet = hasCloudSnapshot ? nextCloudSet : mergedSet;
 
-        if (cloudSet.size === 0 && localSet.size > 0) {
+        if (!areSetsEqual(cloudSet, nextCloudSet)) {
           await syncHiddenRecommendationKeySetToCloud({
             supabaseClient,
             currentUserId,
-            fromSet: new Set(),
-            toSet: localSet,
+            fromSet: cloudSet,
+            toSet: nextCloudSet,
           });
           if (cancelled || currentRevision !== revisionRef.current) return;
-          syncedCloudSetRef.current = new Set(localSet);
-          cloudReadyRef.current = true;
-          return;
         }
 
-        syncedCloudSetRef.current = cloudSet;
-        if (!areSetsEqual(localSet, cloudSet)) {
-          writeHiddenPersonalRecommendationKeys(currentUserId, toSortedArray(cloudSet));
+        syncedCloudSetRef.current = new Set(nextCloudSet);
+        if (!areSetsEqual(localSet, nextLocalSet)) {
+          writeHiddenPersonalRecommendationKeys(currentUserId, toSortedArray(nextLocalSet));
           onHiddenChanged?.();
         }
+        markHiddenCloudSyncSnapshot(currentUserId);
       } catch (error) {
         if (cancelled || currentRevision !== revisionRef.current) return;
 
@@ -201,6 +241,7 @@ export function useCloudHiddenRecommendationsSync({
         });
         if (cancelled || currentRevision !== revisionRef.current) return;
         syncedCloudSetRef.current = new Set(localSet);
+        markHiddenCloudSyncSnapshot(currentUserId);
       } catch (error) {
         if (cancelled || currentRevision !== revisionRef.current) return;
         if (error?.code === SCHEMA_MISSING_ERROR_CODE) {
@@ -238,6 +279,7 @@ export function useCloudHiddenRecommendationsSync({
 
         writeHiddenPersonalRecommendationKeys(currentUserId, toSortedArray(cloudSet));
         onHiddenChanged?.();
+        markHiddenCloudSyncSnapshot(currentUserId);
       } catch (error) {
         if (error?.code === SCHEMA_MISSING_ERROR_CODE) {
           cloudSchemaAvailableRef.current = false;
