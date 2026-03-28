@@ -295,7 +295,7 @@ export default function SettingsView({
     return fileName;
   };
 
-  const refreshLibraryStatsAndTvStatuses = async () => {
+  const _refreshLibraryStatsAndTvStatuses = async () => {
     if (isLibraryRefreshRunning) return;
 
     const tvItems = library.filter((item) => item.mediaType === 'tv');
@@ -774,29 +774,6 @@ export default function SettingsView({
           <p className="text-[10px] opacity-30 text-center">
             {t.storedIn} ({(new Blob([JSON.stringify(library)]).size / 1024).toFixed(1)} KB)
           </p>
-
-          <div className="mt-4 pt-4 border-t border-white/5 space-y-2">
-            <p className="text-[11px] font-bold uppercase tracking-widest opacity-50">
-              {t.libraryRefreshButton || t.yourLibrary}
-            </p>
-            <p className="text-xs opacity-55">
-              {t.libraryRefreshHint || t.dataHint}
-            </p>
-            <button
-              type="button"
-              onClick={refreshLibraryStatsAndTvStatuses}
-              disabled={isLibraryRefreshRunning}
-              className={`w-full py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all border ${
-                isLibraryRefreshRunning
-                  ? 'bg-white/5 border-white/5 text-white/40 cursor-not-allowed'
-                  : 'bg-white/5 hover:bg-white/10 border-white/10'
-              }`}
-            >
-              {isLibraryRefreshRunning
-                ? (t.libraryRefreshRunning || t.loading)
-                : (t.libraryRefreshButton || t.yourLibrary)}
-            </button>
-          </div>
         </div>
       </div>
 

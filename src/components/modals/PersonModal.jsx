@@ -116,7 +116,7 @@ export default function PersonModal({
                 <p className="text-[10px] font-black uppercase tracking-widest text-green-500 mb-4 italic">{t.inYourLibrary} ({selectedPerson.moviesInLibrary.length})</p>
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
                   {selectedPerson.moviesInLibrary.map((item, i) => (
-                    <div key={`${item.mediaType}-${item.id}`} onClick={() => { handleClose(); getFullDetails(item); }} className="group cursor-pointer card-stagger" style={{ '--stagger-i': i }}>
+                    <div key={`${item.mediaType}-${item.id}`} onClick={() => getFullDetails(item, { fromPersonModal: true })} className="group cursor-pointer card-stagger" style={{ '--stagger-i': i }}>
                       <div className="relative mb-3 rounded-2xl overflow-hidden shadow-xl transition-transform group-hover:scale-105">
                         <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'} className="w-full aspect-[2/3] object-cover" alt={item.title || item.name} />
                         {item.rating > 0 && <div className="absolute top-2 left-2 bg-yellow-500 text-black text-xs font-black px-2 py-1 rounded-lg">{'\u2605'} {item.rating}</div>}
@@ -152,7 +152,7 @@ export default function PersonModal({
                             <button
                               key={`${group.key}-mobile-${item.mediaType}-${item.id}`}
                               type="button"
-                              onClick={() => { handleClose(); getFullDetails(item); }}
+                              onClick={() => getFullDetails(item, { fromPersonModal: true })}
                               className="person-filmography-mobile-item card-stagger"
                               style={{ '--stagger-i': i }}
                             >
@@ -190,7 +190,7 @@ export default function PersonModal({
 
                       <div className="hidden md:grid md:grid-cols-4 lg:grid-cols-6 gap-4">
                         {group.items.map((item, i) => (
-                          <div key={`${group.key}-${item.mediaType}-${item.id}`} onClick={() => { handleClose(); getFullDetails(item); }} className="group cursor-pointer card-stagger" style={{ '--stagger-i': i }}>
+                          <div key={`${group.key}-${item.mediaType}-${item.id}`} onClick={() => getFullDetails(item, { fromPersonModal: true })} className="group cursor-pointer card-stagger" style={{ '--stagger-i': i }}>
                             <div className="relative mb-3 rounded-2xl overflow-hidden shadow-xl transition-transform group-hover:scale-105">
                               <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'} className="w-full aspect-[2/3] object-cover" alt={item.title || item.name} />
                               {renderLibraryStatusBadge(libraryIndex.get(`${item.mediaType}-${item.id}`))}

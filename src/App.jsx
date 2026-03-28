@@ -62,6 +62,38 @@ function replaceHashWithTab(tabId) {
   window.history.replaceState(window.history.state, '', nextUrl);
 }
 
+function toDetailsHistoryItem(item) {
+  if (!item?.id || !item?.mediaType) return null;
+
+  return {
+    id: item.id,
+    mediaType: item.mediaType,
+    title: item.title,
+    name: item.name,
+    title_ru: item.title_ru,
+    name_ru: item.name_ru,
+    title_en: item.title_en,
+    name_en: item.name_en,
+    original_title: item.original_title,
+    original_name: item.original_name,
+    poster_path: item.poster_path,
+    backdrop_path: item.backdrop_path,
+    release_date: item.release_date,
+    first_air_date: item.first_air_date,
+    vote_average: item.vote_average,
+    rating: item.rating,
+    watchedEpisodes: item.watchedEpisodes || {},
+    seasonRatings: item.seasonRatings || {},
+  };
+}
+
+function toPersonHistoryItem(person) {
+  if (!person?.id) return null;
+  return {
+    ...person,
+  };
+}
+
 /* Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Main App Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ */
 export default function App() {
   const {
@@ -128,9 +160,15 @@ export default function App() {
   const [addPulseId, setAddPulseId] = useState(null);
 
   const selectedItemRef = useRef(selectedItem);
+  const selectedPersonRef = useRef(selectedPerson);
+  const detailsModalHistoryRef = useRef([]);
+  const [detailsModalHistoryDepth, setDetailsModalHistoryDepth] = useState(0);
   useEffect(() => {
     selectedItemRef.current = selectedItem;
   }, [selectedItem]);
+  useEffect(() => {
+    selectedPersonRef.current = selectedPerson;
+  }, [selectedPerson]);
 
   useEffect(() => {
     const syncActiveTabFromUrl = () => {
@@ -236,7 +274,7 @@ export default function App() {
     removeFromLibrary, handleEpisodeClick, handleSeasonToggle,
   } = useLibrary({ library, setLibrary, setSelectedItem, selectedItemRef });
   const {
-    getFullDetails,
+    getFullDetails: fetchFullDetails,
     getPersonDetails,
     loadSeasonEpisodes,
   } = useTmdbDetailsApi({
@@ -257,8 +295,70 @@ export default function App() {
     setGlobalError(rolesError);
   }, [rolesError]);
 
+  const syncDetailsHistoryDepth = useCallback(() => {
+    const nextDepth = detailsModalHistoryRef.current.reduce(
+      (sum, entry) => sum + (Number(entry?.depthCost) || 1),
+      0
+    );
+    setDetailsModalHistoryDepth(nextDepth);
+  }, []);
+
+  const openDetailsWithHistory = useCallback((item, options = {}) => {
+    if (!item?.id || !item?.mediaType) return;
+
+    const skipHistory = Boolean(options.skipHistory);
+    const fromPersonModal = Boolean(options.fromPersonModal);
+    const currentItem = selectedItemRef.current;
+    const currentPerson = selectedPersonRef.current;
+    const hasCurrentItem = Boolean(currentItem?.id && currentItem?.mediaType);
+    const isDifferentItem = hasCurrentItem
+      && (currentItem.id !== item.id || currentItem.mediaType !== item.mediaType);
+
+    if (!skipHistory) {
+      if (fromPersonModal && currentPerson) {
+        const personSnapshot = toPersonHistoryItem(currentPerson);
+        const itemSnapshot = toDetailsHistoryItem(currentItem);
+        if (personSnapshot) {
+          const depthCost = 1 + Number(Boolean(itemSnapshot));
+          detailsModalHistoryRef.current.push({
+            type: 'person',
+            person: personSnapshot,
+            item: itemSnapshot,
+            depthCost,
+          });
+          syncDetailsHistoryDepth();
+        }
+        setSelectedPerson(null);
+        setClosingPerson(false);
+      } else if (isDifferentItem) {
+        const itemSnapshot = toDetailsHistoryItem(currentItem);
+        if (itemSnapshot) {
+          detailsModalHistoryRef.current.push({
+            type: 'details',
+            item: itemSnapshot,
+            depthCost: 1,
+          });
+          syncDetailsHistoryDepth();
+        }
+      }
+    } else if (skipHistory) {
+      syncDetailsHistoryDepth();
+    }
+
+    fetchFullDetails(item);
+  }, [fetchFullDetails, syncDetailsHistoryDepth]);
+
+  useEffect(() => {
+    if (selectedItem) return;
+    if (detailsModalHistoryRef.current.length === 0 && detailsModalHistoryDepth === 0) return;
+    detailsModalHistoryRef.current = [];
+    setDetailsModalHistoryDepth(0);
+  }, [selectedItem, detailsModalHistoryDepth]);
+
   // Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Close modals with animation Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ
   const closeDetails = useCallback(() => {
+    detailsModalHistoryRef.current = [];
+    setDetailsModalHistoryDepth(0);
     setClosingDetails(true);
     setTimeout(() => { setSelectedItem(null); setClosingDetails(false); }, 220);
   }, []);
@@ -287,6 +387,26 @@ export default function App() {
 
     if (selectedItem) {
       if (immediate) {
+        if (detailsModalHistoryRef.current.length > 0) {
+          const previousState = detailsModalHistoryRef.current.pop();
+          syncDetailsHistoryDepth();
+          if (previousState?.type === 'person' && previousState.person) {
+            if (previousState.item) {
+              openDetailsWithHistory(previousState.item, { skipHistory: true });
+            }
+            setSelectedPerson(previousState.person);
+            setClosingPerson(false);
+            setClosingDetails(false);
+            return;
+          }
+          if (previousState?.item) {
+            openDetailsWithHistory(previousState.item, { skipHistory: true });
+            setClosingDetails(false);
+            return;
+          }
+        }
+        detailsModalHistoryRef.current = [];
+        setDetailsModalHistoryDepth(0);
         setSelectedItem(null);
         setClosingDetails(false);
       } else {
@@ -297,6 +417,8 @@ export default function App() {
     closeDetails,
     closePerson,
     deleteModal,
+    openDetailsWithHistory,
+    syncDetailsHistoryDepth,
     movieRatingModal,
     quickActions,
     ratingModal,
@@ -307,6 +429,7 @@ export default function App() {
 
   const modalDepth = useMemo(() => (
     Number(Boolean(selectedItem)) +
+    Number(Boolean(selectedItem)) * detailsModalHistoryDepth +
     Number(Boolean(selectedPerson)) +
     Number(Boolean(trailerId)) +
     Number(Boolean(deleteModal)) +
@@ -319,6 +442,7 @@ export default function App() {
     quickActions,
     ratingModal,
     selectedItem,
+    detailsModalHistoryDepth,
     selectedPerson,
     trailerId,
   ]);
@@ -428,7 +552,7 @@ export default function App() {
   }, []);
 
   const onCardClick = (item) => {
-    getFullDetails(item);
+    openDetailsWithHistory(item);
   };
 
   const notifyPersonalRecommendationsHiddenChanged = useCallback(() => {
@@ -699,6 +823,7 @@ export default function App() {
         <LibraryView
           shown={shown}
           library={library}
+          setLibrary={setLibrary}
           libraryType={libraryType} setLibraryType={setLibraryType}
           shelf={shelf} setShelf={setShelf}
           sortBy={sortBy} setSortBy={setSortBy}
@@ -722,7 +847,7 @@ export default function App() {
           statsView={statsView} setStatsView={setStatsView}
           peopleView={peopleView} setPeopleView={setPeopleView}
           getPersonDetails={getPersonDetails}
-          getFullDetails={getFullDetails}
+          getFullDetails={openDetailsWithHistory}
           openQuickActions={openQuickActions}
         />
         </div>
@@ -792,7 +917,7 @@ export default function App() {
         seasonEpisodes={seasonEpisodes} loadingSeason={loadingSeason}
         loadSeasonEpisodes={loadSeasonEpisodes}
         handleEpisodeClick={handleEpisodeClick} handleSeasonToggle={handleSeasonToggle}
-        getPersonDetails={getPersonDetails} getFullDetails={getFullDetails}
+        getPersonDetails={getPersonDetails} getFullDetails={openDetailsWithHistory}
         triggerAddPulse={triggerAddPulse}
       />
 
@@ -955,7 +1080,7 @@ export default function App() {
         isClosing={closingPerson} onClose={closePerson}
         library={library} t={t} DATE_LOCALE={DATE_LOCALE}
         STATUS_BADGE_CONFIG={STATUS_BADGE_CONFIG}
-        getFullDetails={getFullDetails}
+        getFullDetails={openDetailsWithHistory}
       />
 
       {/* TRAILER */}
@@ -999,5 +1124,3 @@ export default function App() {
     </div>
   );
 }
-
-

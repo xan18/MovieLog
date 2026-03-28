@@ -6,7 +6,12 @@ import { tmdbFetchJson } from '../../services/tmdb.js';
 import { isReleasedDate } from '../../utils/releaseUtils.js';
 import { useQuickActionGesture } from '../../hooks/useQuickActionGesture.js';
 import { useAutoLoadMoreOnScroll } from '../../hooks/useAutoLoadMoreOnScroll.js';
-import { getTvProgressSnapshot } from '../../utils/tvStatusUtils.js';
+import {
+  getEpisodeMarker,
+  getTvProgressSnapshot,
+  getTvSeasonsSignature,
+  resolveTvProgressStatus,
+} from '../../utils/tvStatusUtils.js';
 
 const pickDisplayTitle = (item, lang) => {
   if (!item) return '';
@@ -73,8 +78,10 @@ const renderTvProgressBadgeIcon = (variant) => {
   return null;
 };
 
+const TMDB_LIBRARY_REFRESH_CHUNK_SIZE = 4;
+
 export default function LibraryView({
-  shown, library,
+  shown, library, setLibrary,
   libraryType, setLibraryType,
   shelf, setShelf,
   sortBy, setSortBy,
@@ -93,6 +100,9 @@ export default function LibraryView({
   const [selectedReleaseFilter, setSelectedReleaseFilter] = React.useState('all');
   const [visiblePageCount, setVisiblePageCount] = React.useState(1);
   const [genreCatalog, setGenreCatalog] = React.useState([]);
+  const [isLibraryRefreshRunning, setIsLibraryRefreshRunning] = React.useState(false);
+  const [libraryRefreshNotice, setLibraryRefreshNotice] = React.useState(null);
+  const libraryRefreshNoticeTimerRef = React.useRef(null);
   const genreCacheRef = React.useRef({});
   const TMDB_LANG = lang === 'ru' ? 'ru-RU' : 'en-US';
 
@@ -278,11 +288,151 @@ export default function LibraryView({
     onLoadMore: handleLoadMore,
   });
 
+  const showLibraryRefreshNotice = (type, text) => {
+    if (libraryRefreshNoticeTimerRef.current) clearTimeout(libraryRefreshNoticeTimerRef.current);
+    setLibraryRefreshNotice({ type, text });
+    libraryRefreshNoticeTimerRef.current = setTimeout(() => {
+      setLibraryRefreshNotice(null);
+    }, 4500);
+  };
+
+  React.useEffect(() => () => {
+    if (libraryRefreshNoticeTimerRef.current) clearTimeout(libraryRefreshNoticeTimerRef.current);
+  }, []);
+
+  React.useEffect(() => {
+    if (libraryType === 'tv') return;
+    setLibraryRefreshNotice(null);
+  }, [libraryType]);
+
+  const refreshLibraryStatsAndTvStatuses = async () => {
+    if (isLibraryRefreshRunning) return;
+
+    const tvItems = library.filter((item) => item.mediaType === 'tv');
+    if (tvItems.length === 0) {
+      showLibraryRefreshNotice('info', t.libraryRefreshNoTv || t.empty);
+      return;
+    }
+
+    setIsLibraryRefreshRunning(true);
+    const tmdbLanguage = lang === 'ru' ? 'ru-RU' : 'en-US';
+    const detailMap = new Map();
+    let failedCount = 0;
+
+    try {
+      for (let index = 0; index < tvItems.length; index += TMDB_LIBRARY_REFRESH_CHUNK_SIZE) {
+        const chunk = tvItems.slice(index, index + TMDB_LIBRARY_REFRESH_CHUNK_SIZE);
+        const results = await Promise.all(chunk.map(async (item) => {
+          try {
+            const detail = await tmdbFetchJson(`/tv/${item.id}`, { language: tmdbLanguage });
+            return { id: item.id, detail };
+          } catch (error) {
+            console.warn(`Failed to refresh TV library item ${item.id}`, error);
+            return { id: item.id, detail: null };
+          }
+        }));
+
+        results.forEach((result) => {
+          if (!result?.detail?.id) {
+            failedCount += 1;
+            return;
+          }
+          detailMap.set(result.id, result.detail);
+        });
+      }
+
+      let metadataUpdatedCount = 0;
+      let statusChangedCount = 0;
+      let movedToWatchingCount = 0;
+
+      const nextLibrary = library.map((item) => {
+        if (item.mediaType !== 'tv') return item;
+
+        const detail = detailMap.get(item.id);
+        if (!detail) return item;
+
+        const nextStatus = resolveTvProgressStatus(item.status, item.watchedEpisodes || {}, detail, item);
+        const nextSeasons = Array.isArray(detail.seasons) ? detail.seasons : item.seasons;
+        const nextNumberOfEpisodes = Number(detail.number_of_episodes) || item.number_of_episodes || 0;
+        const nextNumberOfSeasons = Number(detail.number_of_seasons) || item.number_of_seasons || 0;
+
+        const metadataChanged = (
+          Boolean(item.in_production) !== Boolean(detail.in_production)
+          || nextNumberOfEpisodes !== (Number(item.number_of_episodes) || 0)
+          || nextNumberOfSeasons !== (Number(item.number_of_seasons) || 0)
+          || getTvSeasonsSignature(item.seasons) !== getTvSeasonsSignature(nextSeasons)
+          || getEpisodeMarker(item.next_episode_to_air) !== getEpisodeMarker(detail.next_episode_to_air)
+          || getEpisodeMarker(item.last_episode_to_air) !== getEpisodeMarker(detail.last_episode_to_air)
+        );
+        const statusChanged = nextStatus !== item.status;
+
+        if (!metadataChanged && !statusChanged) return item;
+
+        if (metadataChanged) metadataUpdatedCount += 1;
+        if (statusChanged) {
+          statusChangedCount += 1;
+          if (item.status === 'completed' && nextStatus === 'watching') movedToWatchingCount += 1;
+        }
+
+        return {
+          ...item,
+          status: nextStatus,
+          in_production: detail.in_production,
+          next_episode_to_air: detail.next_episode_to_air || null,
+          last_episode_to_air: detail.last_episode_to_air || null,
+          number_of_episodes: nextNumberOfEpisodes,
+          number_of_seasons: nextNumberOfSeasons,
+          seasons: nextSeasons,
+        };
+      });
+
+      setLibrary(nextLibrary);
+
+      const hasChanges = metadataUpdatedCount > 0 || statusChangedCount > 0;
+      const summaryParts = [
+        `${t.libraryRefreshChecked || 'Checked'}: ${tvItems.length}`,
+        `${t.libraryRefreshUpdated || 'Updated'}: ${metadataUpdatedCount}`,
+        `${t.libraryRefreshStatusesChanged || 'Statuses'}: ${statusChangedCount}`,
+        `${t.libraryRefreshMovedToWatching || 'To watching'}: ${movedToWatchingCount}`,
+      ];
+      if (failedCount > 0) {
+        summaryParts.push(`${t.libraryRefreshErrors || 'Errors'}: ${failedCount}`);
+      }
+
+      showLibraryRefreshNotice(
+        failedCount > 0 ? 'info' : (hasChanges ? 'success' : 'info'),
+        `${hasChanges ? (t.libraryRefreshDone || t.fileSaved) : (t.libraryRefreshNoChanges || t.empty)}. ${summaryParts.join(' • ')}`
+      );
+    } catch (error) {
+      console.error('Failed to refresh library TV statuses', error);
+      showLibraryRefreshNotice('error', t.libraryRefreshFailed || t.networkError);
+    } finally {
+      setIsLibraryRefreshRunning(false);
+    }
+  };
+
   return (
     <div className="view-stack">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <h2 className="app-page-title">{t.shelf.toUpperCase()}</h2>
         <div className="flex items-center gap-3">
+          {libraryType === 'tv' && (
+            <button
+              type="button"
+              onClick={refreshLibraryStatsAndTvStatuses}
+              disabled={isLibraryRefreshRunning}
+              title={t.libraryRefreshHint || t.dataHint}
+              className={`h-[42px] px-4 rounded-xl font-black text-[10px] md:text-[11px] uppercase tracking-widest transition-all border whitespace-nowrap ${
+                isLibraryRefreshRunning
+                  ? 'bg-white/5 border-white/5 text-white/40 cursor-not-allowed'
+                  : 'bg-white/5 hover:bg-white/10 border-white/10'
+              }`}
+            >
+              {isLibraryRefreshRunning
+                ? (t.libraryRefreshRunning || t.loading)
+                : (t.libraryRefreshShortButton || (lang === 'ru' ? 'Обновить сериалы' : 'Refresh TV'))}
+            </button>
+          )}
           <div className="app-switch-wrap">
             <button onClick={() => setLibraryType('movie')} className={`app-switch-btn ${libraryType === 'movie' ? 'active' : ''}`}>{t.movies}</button>
             <button onClick={() => setLibraryType('tv')} className={`app-switch-btn ${libraryType === 'tv' ? 'active' : ''}`}>{t.tvShows}</button>
@@ -291,6 +441,18 @@ export default function LibraryView({
       </div>
 
       <div className="catalog-controls">
+        {libraryType === 'tv' && libraryRefreshNotice && (
+          <div className={`rounded-xl border px-4 py-3 text-xs ${
+            libraryRefreshNotice.type === 'error'
+              ? 'bg-red-500/10 border-red-400/35 text-red-100'
+              : libraryRefreshNotice.type === 'success'
+                ? 'bg-emerald-500/10 border-emerald-400/35 text-emerald-100'
+                : 'bg-white/5 border-white/10 text-white/80'
+          }`}>
+            {libraryRefreshNotice.text}
+          </div>
+        )}
+
         <div className="relative">
           <input
             type="text"

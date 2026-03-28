@@ -49,7 +49,7 @@ export default function QuickActionsMenu({
             {canHideFromRecommendations && (
               <button
                 onClick={() => hideFromForYouRecommendations?.(quickActions.item)}
-                className="w-full text-left px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold uppercase tracking-wide"
+                className="w-full text-left px-3 py-2 rounded-xl bg-red-600/15 hover:bg-red-600/25 border border-red-500/35 text-red-200 text-xs font-bold uppercase tracking-wide"
               >
                 {t.quickActionHideFromForYou || t.collectionsForYouTab}
               </button>
@@ -81,7 +81,7 @@ export default function QuickActionsMenu({
             {canHideFromRecommendations && (
               <button
                 onClick={() => hideFromForYouRecommendations?.(quickActions.item)}
-                className="w-full text-left px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold uppercase tracking-wide"
+                className="w-full text-left px-3 py-2 rounded-xl bg-red-600/15 hover:bg-red-600/25 border border-red-500/35 text-red-200 text-xs font-bold uppercase tracking-wide"
               >
                 {t.quickActionHideFromForYou || t.collectionsForYouTab}
               </button>
