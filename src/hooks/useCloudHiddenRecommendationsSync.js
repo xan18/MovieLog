@@ -9,7 +9,7 @@ import {
 const HIDDEN_RECOMMENDATIONS_TABLE = 'hidden_personal_recommendations';
 const POLL_INTERVAL_MS = 15 * 1000;
 const SCHEMA_MISSING_ERROR_CODE = '42P01';
-const HIDDEN_SYNC_META_PREFIX = 'movielog:personal-recommendations:hidden:cloud-sync:v1';
+const HIDDEN_SYNC_SNAPSHOT_PREFIX = 'movielog:personal-recommendations:hidden:cloud-sync:v2';
 
 const chunkArray = (arr, size) => {
   const chunks = [];
@@ -19,11 +19,15 @@ const chunkArray = (arr, size) => {
   return chunks;
 };
 
-const toKeySet = (values = []) => new Set(
-  (Array.isArray(values) ? values : [])
-    .map((value) => String(value || '').trim())
-    .filter(Boolean)
-);
+const toKeySet = (values = []) => {
+  const set = new Set();
+  (Array.isArray(values) ? values : []).forEach((value) => {
+    const parsed = parsePersonalRecommendationKey(String(value || '').trim());
+    if (!parsed?.key) return;
+    set.add(parsed.key);
+  });
+  return set;
+};
 
 const toSortedArray = (valueSet) => Array.from(valueSet).sort();
 
@@ -44,27 +48,66 @@ const areSetsEqual = (left, right) => {
   return true;
 };
 
-const buildHiddenSyncMetaStorageKey = (userId) => {
+const buildHiddenSyncSnapshotStorageKey = (userId) => {
   const normalizedUserId = String(userId || 'anonymous').trim() || 'anonymous';
-  return `${HIDDEN_SYNC_META_PREFIX}:${normalizedUserId}`;
+  return `${HIDDEN_SYNC_SNAPSHOT_PREFIX}:${normalizedUserId}`;
 };
 
-const hasHiddenCloudSyncSnapshot = (userId) => {
-  if (typeof window === 'undefined' || !window.localStorage) return false;
+const readHiddenCloudSyncSnapshot = (userId) => {
+  if (typeof window === 'undefined' || !window.localStorage) return null;
   try {
-    return window.localStorage.getItem(buildHiddenSyncMetaStorageKey(userId)) === '1';
+    const raw = window.localStorage.getItem(buildHiddenSyncSnapshotStorageKey(userId));
+    if (!raw || raw === '1') return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      window.localStorage.removeItem(buildHiddenSyncSnapshotStorageKey(userId));
+      return null;
+    }
+    const normalized = toKeySet(parsed);
+    if (normalized.size !== parsed.length) {
+      window.localStorage.setItem(
+        buildHiddenSyncSnapshotStorageKey(userId),
+        JSON.stringify(toSortedArray(normalized))
+      );
+    }
+    return normalized;
   } catch {
-    return false;
+    try {
+      window.localStorage.removeItem(buildHiddenSyncSnapshotStorageKey(userId));
+    } catch {
+      // ignore localStorage failures
+    }
+    return null;
   }
 };
 
-const markHiddenCloudSyncSnapshot = (userId) => {
+const writeHiddenCloudSyncSnapshot = (userId, keySet) => {
   if (typeof window === 'undefined' || !window.localStorage) return;
   try {
-    window.localStorage.setItem(buildHiddenSyncMetaStorageKey(userId), '1');
+    window.localStorage.setItem(
+      buildHiddenSyncSnapshotStorageKey(userId),
+      JSON.stringify(toSortedArray(keySet))
+    );
   } catch {
     // ignore localStorage failures
   }
+};
+
+const resolveSyncTargetSet = ({
+  baselineSet,
+  localSet,
+  cloudSet,
+}) => {
+  if (areSetsEqual(localSet, cloudSet)) return new Set(localSet);
+  if (!(baselineSet instanceof Set)) return mergeKeySets(localSet, cloudSet);
+
+  const localMatchesBaseline = areSetsEqual(localSet, baselineSet);
+  const cloudMatchesBaseline = areSetsEqual(cloudSet, baselineSet);
+
+  if (localMatchesBaseline && !cloudMatchesBaseline) return new Set(cloudSet);
+  if (!localMatchesBaseline && cloudMatchesBaseline) return new Set(localSet);
+
+  return mergeKeySets(localSet, cloudSet);
 };
 
 const fetchCloudHiddenRecommendationKeySet = async (supabaseClient, currentUserId) => {
@@ -170,29 +213,29 @@ export function useCloudHiddenRecommendationsSync({
         if (cancelled || currentRevision !== revisionRef.current) return;
 
         const localSet = toKeySet(readHiddenPersonalRecommendationKeys(currentUserId));
-        const hasCloudSnapshot = hasHiddenCloudSyncSnapshot(currentUserId);
-        const mergedSet = mergeKeySets(localSet, cloudSet);
-        const nextCloudSet = hasCloudSnapshot
-          ? (cloudSet.size === 0 && localSet.size > 0 ? localSet : cloudSet)
-          : mergedSet;
-        const nextLocalSet = hasCloudSnapshot ? nextCloudSet : mergedSet;
+        const baselineSet = readHiddenCloudSyncSnapshot(currentUserId);
+        const targetSet = resolveSyncTargetSet({
+          baselineSet,
+          localSet,
+          cloudSet,
+        });
 
-        if (!areSetsEqual(cloudSet, nextCloudSet)) {
+        if (!areSetsEqual(cloudSet, targetSet)) {
           await syncHiddenRecommendationKeySetToCloud({
             supabaseClient,
             currentUserId,
             fromSet: cloudSet,
-            toSet: nextCloudSet,
+            toSet: targetSet,
           });
           if (cancelled || currentRevision !== revisionRef.current) return;
         }
 
-        syncedCloudSetRef.current = new Set(nextCloudSet);
-        if (!areSetsEqual(localSet, nextLocalSet)) {
-          writeHiddenPersonalRecommendationKeys(currentUserId, toSortedArray(nextLocalSet));
+        syncedCloudSetRef.current = new Set(targetSet);
+        if (!areSetsEqual(localSet, targetSet)) {
+          writeHiddenPersonalRecommendationKeys(currentUserId, toSortedArray(targetSet));
           onHiddenChanged?.();
         }
-        markHiddenCloudSyncSnapshot(currentUserId);
+        writeHiddenCloudSyncSnapshot(currentUserId, targetSet);
       } catch (error) {
         if (cancelled || currentRevision !== revisionRef.current) return;
 
@@ -241,7 +284,7 @@ export function useCloudHiddenRecommendationsSync({
         });
         if (cancelled || currentRevision !== revisionRef.current) return;
         syncedCloudSetRef.current = new Set(localSet);
-        markHiddenCloudSyncSnapshot(currentUserId);
+        writeHiddenCloudSyncSnapshot(currentUserId, localSet);
       } catch (error) {
         if (cancelled || currentRevision !== revisionRef.current) return;
         if (error?.code === SCHEMA_MISSING_ERROR_CODE) {
@@ -266,29 +309,58 @@ export function useCloudHiddenRecommendationsSync({
   useEffect(() => {
     if (!enabled || !supabaseClient || !currentUserId) return undefined;
 
+    let cancelled = false;
+    let inFlight = false;
+
     const timer = setInterval(async () => {
+      if (cancelled || inFlight) return;
       if (!cloudReadyRef.current || !cloudSchemaAvailableRef.current) return;
 
       try {
+        inFlight = true;
+        const baselineSet = new Set(syncedCloudSetRef.current);
         const cloudSet = await fetchCloudHiddenRecommendationKeySet(supabaseClient, currentUserId);
-        if (areSetsEqual(cloudSet, syncedCloudSetRef.current)) return;
+        if (cancelled) return;
+        if (areSetsEqual(cloudSet, baselineSet)) return;
 
-        syncedCloudSetRef.current = cloudSet;
         const localSet = toKeySet(readHiddenPersonalRecommendationKeys(currentUserId));
-        if (areSetsEqual(localSet, cloudSet)) return;
+        const targetSet = resolveSyncTargetSet({
+          baselineSet,
+          localSet,
+          cloudSet,
+        });
 
-        writeHiddenPersonalRecommendationKeys(currentUserId, toSortedArray(cloudSet));
-        onHiddenChanged?.();
-        markHiddenCloudSyncSnapshot(currentUserId);
+        if (!areSetsEqual(cloudSet, targetSet)) {
+          await syncHiddenRecommendationKeySetToCloud({
+            supabaseClient,
+            currentUserId,
+            fromSet: cloudSet,
+            toSet: targetSet,
+          });
+          if (cancelled) return;
+        }
+
+        if (!areSetsEqual(localSet, targetSet)) {
+          writeHiddenPersonalRecommendationKeys(currentUserId, toSortedArray(targetSet));
+          onHiddenChanged?.();
+        }
+
+        syncedCloudSetRef.current = new Set(targetSet);
+        writeHiddenCloudSyncSnapshot(currentUserId, targetSet);
       } catch (error) {
         if (error?.code === SCHEMA_MISSING_ERROR_CODE) {
           cloudSchemaAvailableRef.current = false;
           return;
         }
         console.error('Failed to poll hidden recommendations from cloud', error);
+      } finally {
+        inFlight = false;
       }
     }, POLL_INTERVAL_MS);
 
-    return () => clearInterval(timer);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, [currentUserId, enabled, onHiddenChanged, supabaseClient]);
 }
