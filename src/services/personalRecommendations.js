@@ -7,6 +7,7 @@ export const PERSONAL_RECOMMENDATIONS_CACHE_TTL_MS = 10 * 60 * 1000;
 
 const CACHE_PREFIX = 'movielog:personal-recommendations:v1';
 const HIDDEN_PREFIX = 'movielog:personal-recommendations:hidden:v1';
+const HIDDEN_RECOMMENDATION_KEY_PATTERN = /^((movie)|(tv))-\d+$/;
 
 const normalizeMediaType = (mediaType) => {
   if (mediaType === 'movie' || mediaType === 'tv') return mediaType;
@@ -84,6 +85,29 @@ const buildHiddenRecommendationsStorageKey = (userId) => {
   return `${HIDDEN_PREFIX}:${normalizedUserId}`;
 };
 
+export const normalizeHiddenPersonalRecommendationKeys = (rawKeys) => (
+  Array.from(new Set(
+    (Array.isArray(rawKeys) ? rawKeys : [])
+      .map((value) => String(value || '').trim())
+      .filter((value) => HIDDEN_RECOMMENDATION_KEY_PATTERN.test(value))
+  ))
+);
+
+export const writeHiddenPersonalRecommendationKeys = (userId, rawKeys) => {
+  if (typeof window === 'undefined' || !window.localStorage) return false;
+
+  const storageKey = buildHiddenRecommendationsStorageKey(userId);
+  const normalizedUnique = normalizeHiddenPersonalRecommendationKeys(rawKeys);
+
+  try {
+    if (normalizedUnique.length === 0) window.localStorage.removeItem(storageKey);
+    else window.localStorage.setItem(storageKey, JSON.stringify(normalizedUnique));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export const readHiddenPersonalRecommendationKeys = (userId) => {
   if (typeof window === 'undefined' || !window.localStorage) return [];
 
@@ -98,14 +122,10 @@ export const readHiddenPersonalRecommendationKeys = (userId) => {
       return [];
     }
 
-    const normalizedUnique = Array.from(new Set(
-      parsed
-        .map((value) => String(value || '').trim())
-        .filter((value) => /^((movie)|(tv))-\d+$/.test(value))
-    ));
+    const normalizedUnique = normalizeHiddenPersonalRecommendationKeys(parsed);
 
     if (normalizedUnique.length !== parsed.length) {
-      window.localStorage.setItem(storageKey, JSON.stringify(normalizedUnique));
+      writeHiddenPersonalRecommendationKeys(userId, normalizedUnique);
     }
 
     return normalizedUnique;
@@ -125,16 +145,10 @@ export const hidePersonalRecommendationForUser = (userId, mediaType, id) => {
   const recommendationKey = getPersonalRecommendationKey(mediaType, id);
   if (!recommendationKey) return false;
 
-  const storageKey = buildHiddenRecommendationsStorageKey(userId);
   const currentKeys = readHiddenPersonalRecommendationKeys(userId);
   if (currentKeys.includes(recommendationKey)) return false;
 
-  try {
-    window.localStorage.setItem(storageKey, JSON.stringify([...currentKeys, recommendationKey]));
-    return true;
-  } catch {
-    return false;
-  }
+  return writeHiddenPersonalRecommendationKeys(userId, [...currentKeys, recommendationKey]);
 };
 
 export const unhidePersonalRecommendationForUser = (userId, mediaType, id) => {
@@ -143,18 +157,11 @@ export const unhidePersonalRecommendationForUser = (userId, mediaType, id) => {
   const recommendationKey = getPersonalRecommendationKey(mediaType, id);
   if (!recommendationKey) return false;
 
-  const storageKey = buildHiddenRecommendationsStorageKey(userId);
   const currentKeys = readHiddenPersonalRecommendationKeys(userId);
   if (!currentKeys.includes(recommendationKey)) return false;
 
   const nextKeys = currentKeys.filter((key) => key !== recommendationKey);
-  try {
-    if (nextKeys.length === 0) window.localStorage.removeItem(storageKey);
-    else window.localStorage.setItem(storageKey, JSON.stringify(nextKeys));
-    return true;
-  } catch {
-    return false;
-  }
+  return writeHiddenPersonalRecommendationKeys(userId, nextKeys);
 };
 
 export const clearHiddenPersonalRecommendationsForUser = (userId) => {
@@ -162,8 +169,8 @@ export const clearHiddenPersonalRecommendationsForUser = (userId) => {
   const storageKey = buildHiddenRecommendationsStorageKey(userId);
   try {
     const hadAny = Boolean(window.localStorage.getItem(storageKey));
-    window.localStorage.removeItem(storageKey);
-    return hadAny;
+    if (!hadAny) return false;
+    return writeHiddenPersonalRecommendationKeys(userId, []);
   } catch {
     return false;
   }

@@ -4,6 +4,7 @@
 2. Run:
    - `supabase/collections_schema.sql`
    - `supabase/library_items_schema.sql`
+   - `supabase/hidden_recommendations_schema.sql`
 3. Grant author role:
 
 ```sql

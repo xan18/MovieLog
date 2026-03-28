@@ -6,6 +6,7 @@ import { useCatalog } from './hooks/useCatalog.js';
 import { useLibrary } from './hooks/useLibrary.js';
 import { useAuthSession } from './hooks/useAuthSession.js';
 import { useCloudLibrarySync } from './hooks/useCloudLibrarySync.js';
+import { useCloudHiddenRecommendationsSync } from './hooks/useCloudHiddenRecommendationsSync.js';
 import { useUserRoles } from './hooks/useUserRoles.js';
 import { useTmdbDetailsApi } from './hooks/useTmdbDetailsApi.js';
 import { useModalHistory } from './hooks/useModalHistory.js';
@@ -160,6 +161,9 @@ export default function App() {
   const [closingDetails, setClosingDetails] = useState(false);
   const [closingPerson, setClosingPerson] = useState(false);
   const [addPulseId, setAddPulseId] = useState(null);
+  const notifyPersonalRecommendationsHiddenChanged = useCallback(() => {
+    setPersonalRecommendationsHiddenVersion((prev) => prev + 1);
+  }, []);
 
   const selectedItemRef = useRef(selectedItem);
   const selectedPersonRef = useRef(selectedPerson);
@@ -249,6 +253,13 @@ export default function App() {
     library,
     setLibrary,
     syncErrorFallback: t.authCloudSyncError,
+  });
+  useCloudHiddenRecommendationsSync({
+    enabled: isSupabaseConfigured && Boolean(supabase),
+    supabaseClient: supabase,
+    currentUserId,
+    hiddenVersion: personalRecommendationsHiddenVersion,
+    onHiddenChanged: notifyPersonalRecommendationsHiddenChanged,
   });
 
   const {
@@ -571,10 +582,6 @@ export default function App() {
   const onCardClick = (item) => {
     openDetailsWithHistory(item);
   };
-
-  const notifyPersonalRecommendationsHiddenChanged = useCallback(() => {
-    setPersonalRecommendationsHiddenVersion((prev) => prev + 1);
-  }, []);
 
   const hideFromForYouRecommendations = useCallback((item) => {
     const changed = hidePersonalRecommendationForUser(currentUserId || 'anonymous', item?.mediaType, item?.id);

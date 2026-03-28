@@ -6,12 +6,14 @@ Run these scripts in Supabase SQL Editor:
 
 1. `supabase/collections_schema.sql`
 2. `supabase/library_items_schema.sql`
+3. `supabase/hidden_recommendations_schema.sql`
 
 What you get:
 
 - Role table: `public.app_user_roles`
 - Curated tables: `public.curated_collections`, `public.curated_collection_items`
 - Personal cloud library table: `public.library_items`
+- Hidden recommendations table: `public.hidden_personal_recommendations`
 - RLS policies for per-user library and role-based collection management
 
 ## 2) Grant role to a user
