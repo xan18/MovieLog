@@ -542,6 +542,21 @@ export default function App() {
   }, []);
 
   /* Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Context menu Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ */
+  useEffect(() => {
+    if (!quickActions) return undefined;
+
+    const closeQuickActionsOnScroll = () => setQuickActions(null);
+    window.addEventListener('scroll', closeQuickActionsOnScroll, { passive: true });
+    window.addEventListener('wheel', closeQuickActionsOnScroll, { passive: true });
+    window.addEventListener('touchmove', closeQuickActionsOnScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', closeQuickActionsOnScroll);
+      window.removeEventListener('wheel', closeQuickActionsOnScroll);
+      window.removeEventListener('touchmove', closeQuickActionsOnScroll);
+    };
+  }, [quickActions]);
+
   const openQuickActions = useCallback((item, x, y, options = {}) => {
     const showHideFromForYou = Boolean(options.showHideFromForYou);
     const menuWidth = 240;
