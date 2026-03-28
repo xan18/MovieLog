@@ -14,7 +14,6 @@ import {
   getPersonalRecommendationKey,
   mapWithConcurrency,
   pickRecommendationSeeds,
-  readHiddenPersonalRecommendationKeys,
   readPersonalRecommendationsCache,
   writePersonalRecommendationsCache,
 } from '../services/personalRecommendations.js';
@@ -32,7 +31,7 @@ export function usePersonalRecommendations({
   maxResults = PERSONAL_RECOMMENDATIONS_MAX_RESULTS,
   pageSize = PERSONAL_RECOMMENDATIONS_PAGE_SIZE,
   cacheTtlMs = PERSONAL_RECOMMENDATIONS_CACHE_TTL_MS,
-  hiddenVersion = 0,
+  hiddenRecommendationKeys = [],
 }) {
   const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -64,8 +63,12 @@ export function usePersonalRecommendations({
     minSeedRating: normalizedMinSeedRating,
   }), [currentUserId, libraryFingerprint, normalizedMinSeedRating, tmdbLanguage]);
   const hiddenRecommendationKeySet = useMemo(
-    () => new Set(readHiddenPersonalRecommendationKeys(currentUserId || 'anonymous')),
-    [currentUserId, hiddenVersion]
+    () => new Set(
+      (Array.isArray(hiddenRecommendationKeys) ? hiddenRecommendationKeys : [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    ),
+    [hiddenRecommendationKeys]
   );
 
   useEffect(() => {

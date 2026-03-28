@@ -48,7 +48,7 @@ export default function CollectionsView({
   isAuthor,
   authorModeEnabled,
   setAuthorModeEnabled,
-  personalRecommendationsHiddenVersion,
+  hiddenRecommendationKeys = [],
   recommendationMinSeedRating = 8,
   setRecommendationMinSeedRating = () => {},
   recommendationMediaTypeFilter = 'all',
@@ -136,7 +136,7 @@ export default function CollectionsView({
     minSeedRating: recommendationMinSeedRating,
     mediaTypeFilter: recommendationMediaTypeFilter,
     enabled: collectionsSection === 'forYou',
-    hiddenVersion: personalRecommendationsHiddenVersion,
+    hiddenRecommendationKeys,
   });
   const recommendationsLoadMoreSentinelRef = useAutoLoadMoreOnScroll({
     enabled: Boolean(autoLoadMoreOnScroll) && collectionsSection === 'forYou',

@@ -12,10 +12,7 @@ import {
 import { getLanguageOptions, getThemeOptions } from '../../utils/uiOptions.js';
 import { getYear } from '../../utils/appUtils.js';
 import {
-  clearHiddenPersonalRecommendationsForUser,
   parsePersonalRecommendationKey,
-  readHiddenPersonalRecommendationKeys,
-  unhidePersonalRecommendationForUser,
 } from '../../services/personalRecommendations.js';
 import { tmdbFetchJson } from '../../services/tmdb.js';
 
@@ -23,7 +20,6 @@ const TMDB_LIBRARY_REFRESH_CHUNK_SIZE = 4;
 
 export default function SettingsView({
   library, setLibrary,
-  currentUserId,
   authUser,
   userProfile,
   onSaveProfile,
@@ -40,8 +36,9 @@ export default function SettingsView({
   canAuthorMode,
   authorModeEnabled, setAuthorModeEnabled,
   confirmClear, setConfirmClear,
-  personalRecommendationsHiddenVersion,
-  onPersonalRecommendationsHiddenChanged,
+  hiddenForYouKeys = [],
+  onRestoreHiddenForYouItem,
+  onRestoreAllHiddenForYou,
   onCardClick,
 }) {
   const LANGUAGE_OPTIONS = getLanguageOptions(t);
@@ -53,7 +50,6 @@ export default function SettingsView({
   const [profileBio, setProfileBio] = useState(() => userProfile?.bio || '');
   const [avatarPreviewBroken, setAvatarPreviewBroken] = useState(false);
   const [pendingImport, setPendingImport] = useState(null);
-  const [hiddenForYouKeys, setHiddenForYouKeys] = useState([]);
   const [isHiddenForYouModalOpen, setHiddenForYouModalOpen] = useState(false);
   const [hiddenForYouModalItems, setHiddenForYouModalItems] = useState([]);
   const [hiddenForYouModalLoading, setHiddenForYouModalLoading] = useState(false);
@@ -97,10 +93,6 @@ export default function SettingsView({
     setProfileBio(userProfile?.bio || '');
     setAvatarPreviewBroken(false);
   }, [userProfile]);
-
-  useEffect(() => {
-    setHiddenForYouKeys(readHiddenPersonalRecommendationKeys(currentUserId || 'anonymous'));
-  }, [currentUserId, personalRecommendationsHiddenVersion]);
 
   const getItemKey = (item) => `${item.mediaType}-${item.id}`;
 
@@ -210,27 +202,19 @@ export default function SettingsView({
     onCardClick(item);
   };
 
-  const restoreHiddenForYouItem = (entry) => {
+  const restoreHiddenForYouItem = async (entry) => {
     if (!entry?.mediaType || !entry?.id) return;
-    const changed = unhidePersonalRecommendationForUser(
-      currentUserId || 'anonymous',
-      entry.mediaType,
-      entry.id
-    );
+    const changed = await onRestoreHiddenForYouItem?.(entry.mediaType, entry.id);
     if (!changed) return;
 
-    setHiddenForYouKeys((prev) => prev.filter((key) => key !== entry.key));
     setHiddenForYouModalItems((prev) => prev.filter((item) => item._hiddenKey !== entry.key));
-    onPersonalRecommendationsHiddenChanged?.();
     showNotice('success', t.forYouHiddenRestoreOneDone || t.fileSaved);
   };
 
-  const restoreAllHiddenForYou = () => {
-    const hadAny = clearHiddenPersonalRecommendationsForUser(currentUserId || 'anonymous');
+  const restoreAllHiddenForYou = async () => {
+    const hadAny = await onRestoreAllHiddenForYou?.();
     if (!hadAny) return;
-    setHiddenForYouKeys([]);
     setHiddenForYouModalItems([]);
-    onPersonalRecommendationsHiddenChanged?.();
     showNotice('success', t.forYouHiddenRestoreAllDone || t.fileSaved);
   };
 

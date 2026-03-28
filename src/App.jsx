@@ -13,7 +13,6 @@ import { useModalHistory } from './hooks/useModalHistory.js';
 import { useStatsSelectors } from './hooks/useStatsSelectors.js';
 import { isSupabaseConfigured, supabase } from './services/supabase.js';
 import { tmdbFetchManyJson } from './services/tmdb.js';
-import { hidePersonalRecommendationForUser } from './services/personalRecommendations.js';
 import { getMovieStatuses, getTvStatuses, getStatusBadgeConfig, getTvShowStatusMap, getCrewRoleMap } from './utils/statusConfig.js';
 import { isReleasedItem } from './utils/releaseUtils.js';
 import { sanitizeLibraryData } from './utils/librarySanitizer.js';
@@ -156,14 +155,10 @@ export default function App() {
   const [seasonEpisodes, setSeasonEpisodes] = useState({});
   const [loadingSeason, setLoadingSeason] = useState(null);
   const [quickActions, setQuickActions] = useState(null);
-  const [personalRecommendationsHiddenVersion, setPersonalRecommendationsHiddenVersion] = useState(0);
   const [confirmClear, setConfirmClear] = useState(false);
   const [closingDetails, setClosingDetails] = useState(false);
   const [closingPerson, setClosingPerson] = useState(false);
   const [addPulseId, setAddPulseId] = useState(null);
-  const notifyPersonalRecommendationsHiddenChanged = useCallback(() => {
-    setPersonalRecommendationsHiddenVersion((prev) => prev + 1);
-  }, []);
 
   const selectedItemRef = useRef(selectedItem);
   const selectedPersonRef = useRef(selectedPerson);
@@ -254,12 +249,17 @@ export default function App() {
     setLibrary,
     syncErrorFallback: t.authCloudSyncError,
   });
-  useCloudHiddenRecommendationsSync({
+  const {
+    hiddenRecommendationKeys,
+    hiddenRecommendationsError,
+    hideRecommendation,
+    unhideRecommendation,
+    clearHiddenRecommendations,
+  } = useCloudHiddenRecommendationsSync({
     enabled: isSupabaseConfigured && Boolean(supabase),
     supabaseClient: supabase,
     currentUserId,
-    hiddenVersion: personalRecommendationsHiddenVersion,
-    onHiddenChanged: notifyPersonalRecommendationsHiddenChanged,
+    syncErrorFallback: t.authCloudSyncError,
   });
 
   const {
@@ -583,11 +583,10 @@ export default function App() {
     openDetailsWithHistory(item);
   };
 
-  const hideFromForYouRecommendations = useCallback((item) => {
-    const changed = hidePersonalRecommendationForUser(currentUserId || 'anonymous', item?.mediaType, item?.id);
-    if (changed) notifyPersonalRecommendationsHiddenChanged();
+  const hideFromForYouRecommendations = useCallback(async (item) => {
+    await hideRecommendation(item?.mediaType, item?.id);
     setQuickActions(null);
-  }, [currentUserId, notifyPersonalRecommendationsHiddenChanged]);
+  }, [hideRecommendation]);
 
   const hydrateQuickAddedItemForPeopleStats = useCallback(async (item) => {
     if (!item?.id || !item?.mediaType) return;
@@ -819,6 +818,11 @@ export default function App() {
           {t.authCloudSyncError}: {cloudSyncError}
         </div>
       )}
+      {hiddenRecommendationsError && (
+        <div className="mb-5 rounded-xl border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+          {t.authCloudSyncError}: {hiddenRecommendationsError}
+        </div>
+      )}
       {globalError && (
         <div className="mb-5 rounded-xl border border-amber-400/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
           {globalError}
@@ -889,7 +893,7 @@ export default function App() {
           isAuthor={isAuthor}
           authorModeEnabled={authorModeEnabled}
           setAuthorModeEnabled={setAuthorModeEnabled}
-          personalRecommendationsHiddenVersion={personalRecommendationsHiddenVersion}
+          hiddenRecommendationKeys={hiddenRecommendationKeys}
           recommendationMinSeedRating={recommendationMinSeedRating}
           setRecommendationMinSeedRating={setRecommendationMinSeedRating}
           recommendationMediaTypeFilter={recommendationMediaTypeFilter}
@@ -908,7 +912,6 @@ export default function App() {
         <div className="tab-enter" key="tab-settings">
         <SettingsView
           library={library} setLibrary={setLibrary}
-          currentUserId={currentUserId}
           authUser={session.user}
           userProfile={currentUserProfile}
           onSaveProfile={saveUserProfile}
@@ -926,8 +929,9 @@ export default function App() {
           authorModeEnabled={authorModeEnabled}
           setAuthorModeEnabled={setAuthorModeEnabled}
           confirmClear={confirmClear} setConfirmClear={setConfirmClear}
-          personalRecommendationsHiddenVersion={personalRecommendationsHiddenVersion}
-          onPersonalRecommendationsHiddenChanged={notifyPersonalRecommendationsHiddenChanged}
+          hiddenForYouKeys={hiddenRecommendationKeys}
+          onRestoreHiddenForYouItem={unhideRecommendation}
+          onRestoreAllHiddenForYou={clearHiddenRecommendations}
           onCardClick={onCardClick}
         />
         </div>

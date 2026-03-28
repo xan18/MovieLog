@@ -1,44 +1,19 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  clearHiddenPersonalRecommendationsForUser,
   getPersonalRecommendationKey,
   parsePersonalRecommendationKey,
   readHiddenPersonalRecommendationKeys,
-  writeHiddenPersonalRecommendationKeys,
 } from '../services/personalRecommendations.js';
 
 const HIDDEN_RECOMMENDATIONS_TABLE = 'hidden_personal_recommendations';
 const POLL_INTERVAL_MS = 15 * 1000;
 const SCHEMA_MISSING_ERROR_CODE = '42P01';
-const HIDDEN_SYNC_SNAPSHOT_PREFIX = 'movielog:personal-recommendations:hidden:cloud-sync:v2';
+const POSTGREST_SCHEMA_MISSING_ERROR_CODE = 'PGRST205';
+const UPSERT_BATCH_SIZE = 200;
+const HIDDEN_TABLE_MISSING_MESSAGE = 'Hidden recommendations table is missing. Run supabase/hidden_recommendations_schema.sql.';
 
-const chunkArray = (arr, size) => {
-  const chunks = [];
-  for (let i = 0; i < arr.length; i += size) {
-    chunks.push(arr.slice(i, i + size));
-  }
-  return chunks;
-};
-
-const toKeySet = (values = []) => {
-  const set = new Set();
-  (Array.isArray(values) ? values : []).forEach((value) => {
-    const parsed = parsePersonalRecommendationKey(String(value || '').trim());
-    if (!parsed?.key) return;
-    set.add(parsed.key);
-  });
-  return set;
-};
-
-const toSortedArray = (valueSet) => Array.from(valueSet).sort();
-
-const mergeKeySets = (...sets) => {
-  const merged = new Set();
-  sets.forEach((setValue) => {
-    if (!(setValue instanceof Set)) return;
-    setValue.forEach((key) => merged.add(key));
-  });
-  return merged;
-};
+const toSortedKeyArray = (keySet) => Array.from(keySet).sort();
 
 const areSetsEqual = (left, right) => {
   if (left.size !== right.size) return false;
@@ -48,319 +23,328 @@ const areSetsEqual = (left, right) => {
   return true;
 };
 
-const buildHiddenSyncSnapshotStorageKey = (userId) => {
-  const normalizedUserId = String(userId || 'anonymous').trim() || 'anonymous';
-  return `${HIDDEN_SYNC_SNAPSHOT_PREFIX}:${normalizedUserId}`;
+const mergeSets = (...sets) => {
+  const merged = new Set();
+  sets.forEach((setValue) => {
+    if (!(setValue instanceof Set)) return;
+    setValue.forEach((key) => merged.add(key));
+  });
+  return merged;
 };
 
-const readHiddenCloudSyncSnapshot = (userId) => {
-  if (typeof window === 'undefined' || !window.localStorage) return null;
-  try {
-    const raw = window.localStorage.getItem(buildHiddenSyncSnapshotStorageKey(userId));
-    if (!raw || raw === '1') return null;
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      window.localStorage.removeItem(buildHiddenSyncSnapshotStorageKey(userId));
-      return null;
-    }
-    const normalized = toKeySet(parsed);
-    if (normalized.size !== parsed.length) {
-      window.localStorage.setItem(
-        buildHiddenSyncSnapshotStorageKey(userId),
-        JSON.stringify(toSortedArray(normalized))
-      );
-    }
-    return normalized;
-  } catch {
-    try {
-      window.localStorage.removeItem(buildHiddenSyncSnapshotStorageKey(userId));
-    } catch {
-      // ignore localStorage failures
-    }
-    return null;
+const chunkArray = (items, size) => {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
   }
+  return chunks;
 };
 
-const writeHiddenCloudSyncSnapshot = (userId, keySet) => {
-  if (typeof window === 'undefined' || !window.localStorage) return;
-  try {
-    window.localStorage.setItem(
-      buildHiddenSyncSnapshotStorageKey(userId),
-      JSON.stringify(toSortedArray(keySet))
-    );
-  } catch {
-    // ignore localStorage failures
-  }
+const mapRowsToHiddenKeySet = (rows = []) => {
+  const keySet = new Set();
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const key = getPersonalRecommendationKey(row?.media_type, row?.tmdb_id);
+    if (!key) return;
+    keySet.add(key);
+  });
+  return keySet;
 };
 
-const resolveSyncTargetSet = ({
-  baselineSet,
-  localSet,
-  cloudSet,
-}) => {
-  if (areSetsEqual(localSet, cloudSet)) return new Set(localSet);
-  if (!(baselineSet instanceof Set)) return mergeKeySets(localSet, cloudSet);
-
-  const localMatchesBaseline = areSetsEqual(localSet, baselineSet);
-  const cloudMatchesBaseline = areSetsEqual(cloudSet, baselineSet);
-
-  if (localMatchesBaseline && !cloudMatchesBaseline) return new Set(cloudSet);
-  if (!localMatchesBaseline && cloudMatchesBaseline) return new Set(localSet);
-
-  return mergeKeySets(localSet, cloudSet);
-};
-
-const fetchCloudHiddenRecommendationKeySet = async (supabaseClient, currentUserId) => {
+const fetchCloudHiddenKeySet = async (supabaseClient, currentUserId) => {
   const { data, error } = await supabaseClient
     .from(HIDDEN_RECOMMENDATIONS_TABLE)
     .select('media_type, tmdb_id')
     .eq('user_id', currentUserId);
 
   if (error) throw error;
-  const keys = (Array.isArray(data) ? data : [])
-    .map((row) => getPersonalRecommendationKey(row?.media_type, row?.tmdb_id))
-    .filter(Boolean);
-  return toKeySet(keys);
+  return mapRowsToHiddenKeySet(data);
 };
 
-const syncHiddenRecommendationKeySetToCloud = async ({
+const insertMissingCloudHiddenKeys = async ({
   supabaseClient,
   currentUserId,
-  fromSet,
-  toSet,
+  targetSet,
+  sourceSet,
 }) => {
-  const rowsToUpsert = [];
-  const deleteBuckets = {
-    movie: [],
-    tv: [],
-  };
-
-  toSet.forEach((key) => {
-    if (fromSet.has(key)) return;
+  const rowsToInsert = [];
+  targetSet.forEach((key) => {
+    if (sourceSet.has(key)) return;
     const parsed = parsePersonalRecommendationKey(key);
     if (!parsed) return;
-    rowsToUpsert.push({
+    rowsToInsert.push({
       user_id: currentUserId,
       media_type: parsed.mediaType,
       tmdb_id: parsed.id,
     });
   });
 
-  fromSet.forEach((key) => {
-    if (toSet.has(key)) return;
-    const parsed = parsePersonalRecommendationKey(key);
-    if (!parsed) return;
-    deleteBuckets[parsed.mediaType].push(parsed.id);
-  });
+  if (rowsToInsert.length === 0) return;
 
-  if (rowsToUpsert.length > 0) {
-    for (const batch of chunkArray(rowsToUpsert, 200)) {
-      const { error } = await supabaseClient
-        .from(HIDDEN_RECOMMENDATIONS_TABLE)
-        .insert(batch, {
-          onConflict: 'user_id,media_type,tmdb_id',
-          ignoreDuplicates: true,
-        });
-      if (error) throw error;
-    }
+  for (const batch of chunkArray(rowsToInsert, UPSERT_BATCH_SIZE)) {
+    const { error } = await supabaseClient
+      .from(HIDDEN_RECOMMENDATIONS_TABLE)
+      .insert(batch, {
+        onConflict: 'user_id,media_type,tmdb_id',
+        ignoreDuplicates: true,
+      });
+    if (error) throw error;
   }
+};
 
-  for (const mediaType of ['movie', 'tv']) {
-    const tmdbIds = deleteBuckets[mediaType];
-    if (tmdbIds.length === 0) continue;
-    for (const batch of chunkArray(tmdbIds, 300)) {
-      const { error } = await supabaseClient
-        .from(HIDDEN_RECOMMENDATIONS_TABLE)
-        .delete()
-        .eq('user_id', currentUserId)
-        .eq('media_type', mediaType)
-        .in('tmdb_id', batch);
-      if (error) throw error;
-    }
-  }
+const getSyncErrorMessage = (error, fallbackMessage = '') => (
+  error?.message || fallbackMessage || 'Cloud sync failed'
+);
+
+const isMissingHiddenRecommendationsTableError = (error) => {
+  const code = String(error?.code || '').trim().toUpperCase();
+  if (code === SCHEMA_MISSING_ERROR_CODE || code === POSTGREST_SCHEMA_MISSING_ERROR_CODE) return true;
+  const message = String(error?.message || '').toLowerCase();
+  return message.includes('could not find the table')
+    && message.includes('hidden_personal_recommendations');
 };
 
 export function useCloudHiddenRecommendationsSync({
   enabled,
   supabaseClient,
   currentUserId,
-  hiddenVersion = 0,
-  onHiddenChanged,
+  pollIntervalMs = POLL_INTERVAL_MS,
+  syncErrorFallback = '',
 }) {
-  const syncedCloudSetRef = useRef(new Set());
-  const cloudReadyRef = useRef(false);
-  const cloudSchemaAvailableRef = useRef(true);
+  const [hiddenRecommendationKeys, setHiddenRecommendationKeys] = useState([]);
+  const [hiddenRecommendationsReady, setHiddenRecommendationsReady] = useState(false);
+  const [hiddenRecommendationsError, setHiddenRecommendationsError] = useState('');
+
+  const hiddenSetRef = useRef(new Set());
   const revisionRef = useRef(0);
+
+  const applyHiddenSet = useCallback((nextSet) => {
+    hiddenSetRef.current = new Set(nextSet);
+    setHiddenRecommendationKeys(toSortedKeyArray(nextSet));
+  }, []);
+
+  const clearHiddenState = useCallback(() => {
+    hiddenSetRef.current = new Set();
+    setHiddenRecommendationKeys([]);
+  }, []);
+
+  const refreshHiddenRecommendations = useCallback(async () => {
+    if (!enabled || !supabaseClient || !currentUserId) {
+      clearHiddenState();
+      return false;
+    }
+
+    try {
+      const cloudSet = await fetchCloudHiddenKeySet(supabaseClient, currentUserId);
+      if (!areSetsEqual(cloudSet, hiddenSetRef.current)) {
+        applyHiddenSet(cloudSet);
+      }
+      setHiddenRecommendationsError('');
+      return true;
+    } catch (error) {
+      if (isMissingHiddenRecommendationsTableError(error)) {
+        setHiddenRecommendationsError(HIDDEN_TABLE_MISSING_MESSAGE);
+      } else {
+        setHiddenRecommendationsError(getSyncErrorMessage(error, syncErrorFallback));
+      }
+      console.error('Failed to refresh hidden recommendations from cloud', error);
+      return false;
+    }
+  }, [applyHiddenSet, clearHiddenState, currentUserId, enabled, supabaseClient, syncErrorFallback]);
 
   useEffect(() => {
     if (!enabled || !supabaseClient || !currentUserId) {
-      syncedCloudSetRef.current = new Set();
-      cloudReadyRef.current = false;
-      cloudSchemaAvailableRef.current = true;
       revisionRef.current += 1;
+      clearHiddenState();
+      setHiddenRecommendationsReady(false);
+      setHiddenRecommendationsError('');
       return;
     }
 
     let cancelled = false;
-    const currentRevision = revisionRef.current + 1;
-    revisionRef.current = currentRevision;
-    cloudReadyRef.current = false;
-    cloudSchemaAvailableRef.current = true;
+    const revision = revisionRef.current + 1;
+    revisionRef.current = revision;
 
-    const initializeSync = async () => {
+    setHiddenRecommendationsReady(false);
+    setHiddenRecommendationsError('');
+
+    const initialize = async () => {
       try {
-        const cloudSet = await fetchCloudHiddenRecommendationKeySet(supabaseClient, currentUserId);
-        if (cancelled || currentRevision !== revisionRef.current) return;
+        const cloudSet = await fetchCloudHiddenKeySet(supabaseClient, currentUserId);
+        if (cancelled || revision !== revisionRef.current) return;
 
-        const localSet = toKeySet(readHiddenPersonalRecommendationKeys(currentUserId));
-        const baselineSet = readHiddenCloudSyncSnapshot(currentUserId);
-        const targetSet = resolveSyncTargetSet({
-          baselineSet,
-          localSet,
-          cloudSet,
-        });
+        const legacyLocalSet = new Set(readHiddenPersonalRecommendationKeys(currentUserId));
+        const targetSet = mergeSets(cloudSet, legacyLocalSet);
 
-        if (!areSetsEqual(cloudSet, targetSet)) {
-          await syncHiddenRecommendationKeySetToCloud({
+        if (!areSetsEqual(targetSet, cloudSet)) {
+          await insertMissingCloudHiddenKeys({
             supabaseClient,
             currentUserId,
-            fromSet: cloudSet,
-            toSet: targetSet,
+            targetSet,
+            sourceSet: cloudSet,
           });
-          if (cancelled || currentRevision !== revisionRef.current) return;
+          if (cancelled || revision !== revisionRef.current) return;
         }
 
-        syncedCloudSetRef.current = new Set(targetSet);
-        if (!areSetsEqual(localSet, targetSet)) {
-          writeHiddenPersonalRecommendationKeys(currentUserId, toSortedArray(targetSet));
-          onHiddenChanged?.();
+        if (legacyLocalSet.size > 0) {
+          clearHiddenPersonalRecommendationsForUser(currentUserId);
         }
-        writeHiddenCloudSyncSnapshot(currentUserId, targetSet);
+
+        applyHiddenSet(targetSet);
+        setHiddenRecommendationsError('');
       } catch (error) {
-        if (cancelled || currentRevision !== revisionRef.current) return;
-
-        if (error?.code === SCHEMA_MISSING_ERROR_CODE) {
-          cloudSchemaAvailableRef.current = false;
-          console.warn(
-            'Cloud sync for hidden recommendations is disabled. Run supabase/hidden_recommendations_schema.sql.',
-            error
-          );
-          return;
+        if (cancelled || revision !== revisionRef.current) return;
+        if (isMissingHiddenRecommendationsTableError(error)) {
+          setHiddenRecommendationsError(HIDDEN_TABLE_MISSING_MESSAGE);
+        } else {
+          setHiddenRecommendationsError(getSyncErrorMessage(error, syncErrorFallback));
         }
-
-        console.error('Failed to initialize cloud hidden recommendations sync', error);
+        console.error('Failed to initialize hidden recommendations cloud sync', error);
       } finally {
-        if (!cancelled && currentRevision === revisionRef.current) {
-          cloudReadyRef.current = true;
-        }
+        if (cancelled || revision !== revisionRef.current) return;
+        setHiddenRecommendationsReady(true);
       }
     };
 
-    initializeSync();
+    initialize();
 
     return () => {
       cancelled = true;
     };
-  }, [currentUserId, enabled, onHiddenChanged, supabaseClient]);
+  }, [
+    applyHiddenSet,
+    clearHiddenState,
+    currentUserId,
+    enabled,
+    syncErrorFallback,
+    supabaseClient,
+  ]);
 
   useEffect(() => {
-    if (!enabled || !supabaseClient || !currentUserId) return;
-    if (!cloudReadyRef.current || !cloudSchemaAvailableRef.current) return;
-
-    const localSet = toKeySet(readHiddenPersonalRecommendationKeys(currentUserId));
-    if (areSetsEqual(localSet, syncedCloudSetRef.current)) return;
-
-    let cancelled = false;
-    const currentRevision = revisionRef.current + 1;
-    revisionRef.current = currentRevision;
-
-    const pushLocalChanges = async () => {
-      try {
-        await syncHiddenRecommendationKeySetToCloud({
-          supabaseClient,
-          currentUserId,
-          fromSet: new Set(syncedCloudSetRef.current),
-          toSet: localSet,
-        });
-        if (cancelled || currentRevision !== revisionRef.current) return;
-        syncedCloudSetRef.current = new Set(localSet);
-        writeHiddenCloudSyncSnapshot(currentUserId, localSet);
-      } catch (error) {
-        if (cancelled || currentRevision !== revisionRef.current) return;
-        if (error?.code === SCHEMA_MISSING_ERROR_CODE) {
-          cloudSchemaAvailableRef.current = false;
-          console.warn(
-            'Cloud sync for hidden recommendations is disabled. Run supabase/hidden_recommendations_schema.sql.',
-            error
-          );
-          return;
-        }
-        console.error('Failed to sync hidden recommendations to cloud', error);
-      }
-    };
-
-    pushLocalChanges();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentUserId, enabled, hiddenVersion, supabaseClient]);
-
-  useEffect(() => {
-    if (!enabled || !supabaseClient || !currentUserId) return undefined;
+    if (!enabled || !supabaseClient || !currentUserId || !hiddenRecommendationsReady) return undefined;
 
     let cancelled = false;
     let inFlight = false;
+    const normalizedPollInterval = Math.max(5000, Number(pollIntervalMs) || POLL_INTERVAL_MS);
 
     const timer = setInterval(async () => {
       if (cancelled || inFlight) return;
-      if (!cloudReadyRef.current || !cloudSchemaAvailableRef.current) return;
-
-      try {
-        inFlight = true;
-        const baselineSet = new Set(syncedCloudSetRef.current);
-        const cloudSet = await fetchCloudHiddenRecommendationKeySet(supabaseClient, currentUserId);
-        if (cancelled) return;
-        if (areSetsEqual(cloudSet, baselineSet)) return;
-
-        const localSet = toKeySet(readHiddenPersonalRecommendationKeys(currentUserId));
-        const targetSet = resolveSyncTargetSet({
-          baselineSet,
-          localSet,
-          cloudSet,
-        });
-
-        if (!areSetsEqual(cloudSet, targetSet)) {
-          await syncHiddenRecommendationKeySetToCloud({
-            supabaseClient,
-            currentUserId,
-            fromSet: cloudSet,
-            toSet: targetSet,
-          });
-          if (cancelled) return;
-        }
-
-        if (!areSetsEqual(localSet, targetSet)) {
-          writeHiddenPersonalRecommendationKeys(currentUserId, toSortedArray(targetSet));
-          onHiddenChanged?.();
-        }
-
-        syncedCloudSetRef.current = new Set(targetSet);
-        writeHiddenCloudSyncSnapshot(currentUserId, targetSet);
-      } catch (error) {
-        if (error?.code === SCHEMA_MISSING_ERROR_CODE) {
-          cloudSchemaAvailableRef.current = false;
-          return;
-        }
-        console.error('Failed to poll hidden recommendations from cloud', error);
-      } finally {
-        inFlight = false;
-      }
-    }, POLL_INTERVAL_MS);
+      inFlight = true;
+      await refreshHiddenRecommendations();
+      inFlight = false;
+    }, normalizedPollInterval);
 
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [currentUserId, enabled, onHiddenChanged, supabaseClient]);
+  }, [
+    currentUserId,
+    enabled,
+    hiddenRecommendationsReady,
+    pollIntervalMs,
+    refreshHiddenRecommendations,
+    supabaseClient,
+  ]);
+
+  const hideRecommendation = useCallback(async (mediaType, id) => {
+    if (!enabled || !supabaseClient || !currentUserId) return false;
+
+    const key = getPersonalRecommendationKey(mediaType, id);
+    const parsed = parsePersonalRecommendationKey(key);
+    if (!parsed) return false;
+
+    const nextSet = new Set(hiddenSetRef.current);
+    if (nextSet.has(parsed.key)) return false;
+
+    const { error } = await supabaseClient
+      .from(HIDDEN_RECOMMENDATIONS_TABLE)
+      .insert({
+        user_id: currentUserId,
+        media_type: parsed.mediaType,
+        tmdb_id: parsed.id,
+      }, {
+        onConflict: 'user_id,media_type,tmdb_id',
+        ignoreDuplicates: true,
+      });
+
+    if (error) {
+      if (isMissingHiddenRecommendationsTableError(error)) {
+        setHiddenRecommendationsError(HIDDEN_TABLE_MISSING_MESSAGE);
+      } else {
+        setHiddenRecommendationsError(getSyncErrorMessage(error, syncErrorFallback));
+      }
+      console.error('Failed to hide recommendation in cloud', error);
+      return false;
+    }
+
+    nextSet.add(parsed.key);
+    applyHiddenSet(nextSet);
+    setHiddenRecommendationsError('');
+    return true;
+  }, [applyHiddenSet, currentUserId, enabled, supabaseClient, syncErrorFallback]);
+
+  const unhideRecommendation = useCallback(async (mediaType, id) => {
+    if (!enabled || !supabaseClient || !currentUserId) return false;
+
+    const key = getPersonalRecommendationKey(mediaType, id);
+    const parsed = parsePersonalRecommendationKey(key);
+    if (!parsed) return false;
+
+    const { error } = await supabaseClient
+      .from(HIDDEN_RECOMMENDATIONS_TABLE)
+      .delete()
+      .eq('user_id', currentUserId)
+      .eq('media_type', parsed.mediaType)
+      .eq('tmdb_id', parsed.id);
+
+    if (error) {
+      if (isMissingHiddenRecommendationsTableError(error)) {
+        setHiddenRecommendationsError(HIDDEN_TABLE_MISSING_MESSAGE);
+      } else {
+        setHiddenRecommendationsError(getSyncErrorMessage(error, syncErrorFallback));
+      }
+      console.error('Failed to unhide recommendation in cloud', error);
+      return false;
+    }
+
+    const nextSet = new Set(hiddenSetRef.current);
+    const changed = nextSet.delete(parsed.key);
+    if (changed) applyHiddenSet(nextSet);
+    setHiddenRecommendationsError('');
+    return changed;
+  }, [applyHiddenSet, currentUserId, enabled, supabaseClient, syncErrorFallback]);
+
+  const clearHiddenRecommendations = useCallback(async () => {
+    if (!enabled || !supabaseClient || !currentUserId) return false;
+    if (hiddenSetRef.current.size === 0) return false;
+
+    const { error } = await supabaseClient
+      .from(HIDDEN_RECOMMENDATIONS_TABLE)
+      .delete()
+      .eq('user_id', currentUserId);
+
+    if (error) {
+      if (isMissingHiddenRecommendationsTableError(error)) {
+        setHiddenRecommendationsError(HIDDEN_TABLE_MISSING_MESSAGE);
+      } else {
+        setHiddenRecommendationsError(getSyncErrorMessage(error, syncErrorFallback));
+      }
+      console.error('Failed to clear hidden recommendations in cloud', error);
+      return false;
+    }
+
+    applyHiddenSet(new Set());
+    setHiddenRecommendationsError('');
+    return true;
+  }, [applyHiddenSet, currentUserId, enabled, supabaseClient, syncErrorFallback]);
+
+  return {
+    hiddenRecommendationKeys,
+    hiddenRecommendationsReady,
+    hiddenRecommendationsError,
+    refreshHiddenRecommendations,
+    hideRecommendation,
+    unhideRecommendation,
+    clearHiddenRecommendations,
+  };
 }
