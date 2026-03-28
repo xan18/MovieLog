@@ -63,8 +63,8 @@ export default function SettingsView({
 
   const START_TAB_OPTIONS = useMemo(() => ([
     { value: 'catalog', label: t.search },
-    { value: 'library', label: t.shelf },
     { value: 'collections', label: t.recommendations },
+    { value: 'library', label: t.shelf },
     { value: 'stats', label: t.stats },
     { value: 'settings', label: t.settings },
   ]), [t]);

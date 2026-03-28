@@ -34,7 +34,7 @@ import DetailsModal from './components/modals/DetailsModal.jsx';
 import QuickActionsMenu from './components/modals/QuickActionsMenu.jsx';
 import PersonModal from './components/modals/PersonModal.jsx';
 
-const APP_TABS = ['catalog', 'library', 'collections', 'stats', 'settings'];
+const APP_TABS = ['catalog', 'collections', 'library', 'stats', 'settings'];
 const APP_TAB_SET = new Set(APP_TABS);
 const DEFAULT_APP_TAB = 'catalog';
 
@@ -766,8 +766,8 @@ export default function App() {
           <div className="app-nav-wrap">
             {[
               { id: 'catalog', label: t.search },
-              { id: 'library', label: t.shelf },
               { id: 'collections', label: t.recommendations },
+              { id: 'library', label: t.shelf },
               { id: 'stats', label: t.stats },
               { id: 'settings', label: t.settings }
             ].map(tab => (
@@ -1109,8 +1109,8 @@ export default function App() {
       <nav className="mobile-bottom-nav fixed left-1/2 -translate-x-1/2 glass rounded-[3rem] border border-white/10 flex p-2 z-[90] shadow-2xl md:hidden">
         {[
           { id: 'catalog', icon: '\u{1F50D}', label: t.search },
-          { id: 'library', icon: '\u{1F4DA}', label: t.shelf },
           { id: 'collections', icon: '\u{1F381}', label: t.recommendations },
+          { id: 'library', icon: '\u{1F4DA}', label: t.shelf },
           { id: 'stats', icon: '\u{1F4CA}', label: t.stats },
           { id: 'settings', icon: '\u2699\uFE0F', label: t.settings }
         ].map(tab => (
