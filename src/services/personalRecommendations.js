@@ -1,4 +1,6 @@
 export const PERSONAL_RECOMMENDATIONS_MIN_SEED_RATING = 8;
+export const PERSONAL_RECOMMENDATIONS_MIN_SEED_RATING_MIN = 1;
+export const PERSONAL_RECOMMENDATIONS_MIN_SEED_RATING_MAX = 10;
 export const PERSONAL_RECOMMENDATIONS_MAX_RESULTS = 100;
 export const PERSONAL_RECOMMENDATIONS_PAGE_SIZE = 20;
 export const PERSONAL_RECOMMENDATIONS_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -21,6 +23,15 @@ const normalizeRating = (rating) => {
   const numericRating = Math.round(Number(rating) || 0);
   if (!Number.isFinite(numericRating)) return 0;
   return Math.max(0, Math.min(10, numericRating));
+};
+
+const normalizeMinSeedRating = (value) => {
+  const numericValue = Math.round(Number(value));
+  if (!Number.isFinite(numericValue)) return PERSONAL_RECOMMENDATIONS_MIN_SEED_RATING;
+  return Math.max(
+    PERSONAL_RECOMMENDATIONS_MIN_SEED_RATING_MIN,
+    Math.min(PERSONAL_RECOMMENDATIONS_MIN_SEED_RATING_MAX, numericValue)
+  );
 };
 
 const normalizeDateAdded = (value) => {
@@ -158,8 +169,9 @@ export const clearHiddenPersonalRecommendationsForUser = (userId) => {
   }
 };
 
-export const pickRecommendationSeeds = (library = []) => {
+export const pickRecommendationSeeds = (library = [], options = {}) => {
   if (!Array.isArray(library) || library.length === 0) return [];
+  const minSeedRating = normalizeMinSeedRating(options?.minSeedRating);
 
   const byKey = new Map();
 
@@ -167,7 +179,7 @@ export const pickRecommendationSeeds = (library = []) => {
     const mediaType = normalizeMediaType(item?.mediaType);
     const id = normalizeId(item?.id);
     const rating = normalizeRating(item?.rating);
-    if (!mediaType || id === 0 || rating < PERSONAL_RECOMMENDATIONS_MIN_SEED_RATING) return;
+    if (!mediaType || id === 0 || rating < minSeedRating) return;
 
     const seed = {
       mediaType,
@@ -219,11 +231,13 @@ export const buildPersonalRecommendationsCacheKey = ({
   userId,
   language,
   libraryFingerprint,
+  minSeedRating = PERSONAL_RECOMMENDATIONS_MIN_SEED_RATING,
 }) => {
   const normalizedUserId = (userId || 'anonymous').trim();
   const normalizedLanguage = (language || 'en-US').trim();
+  const normalizedMinSeedRating = normalizeMinSeedRating(minSeedRating);
   const hash = simpleHash(libraryFingerprint || 'empty');
-  return `${CACHE_PREFIX}:${normalizedUserId}:${normalizedLanguage}:${hash}`;
+  return `${CACHE_PREFIX}:${normalizedUserId}:${normalizedLanguage}:min${normalizedMinSeedRating}:${hash}`;
 };
 
 export const readPersonalRecommendationsCache = (cacheKey, ttlMs = PERSONAL_RECOMMENDATIONS_CACHE_TTL_MS) => {

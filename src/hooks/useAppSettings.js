@@ -6,6 +6,8 @@ const DEFAULT_APP_SETTINGS = {
   librarySortDefault: 'dateAdded',
   persistCatalogFilters: false,
   autoLoadMoreOnScroll: false,
+  recommendationMinSeedRating: 8,
+  recommendationMediaTypeFilter: 'all',
   importMode: 'replace',
   reducedMotion: false,
   authorModeEnabled: true,
@@ -13,6 +15,18 @@ const DEFAULT_APP_SETTINGS = {
 
 const START_TABS = new Set(['catalog', 'library', 'collections', 'stats', 'settings']);
 const LIBRARY_SORTS = new Set(['imdbRating', 'myRating', 'dateAdded', 'releaseYear']);
+const RECOMMENDATION_MEDIA_TYPE_FILTERS = new Set(['all', 'movie', 'tv']);
+const RECOMMENDATION_MIN_SEED_RATING_MIN = 1;
+const RECOMMENDATION_MIN_SEED_RATING_MAX = 10;
+
+const normalizeRecommendationMinSeedRating = (value) => {
+  const numericValue = Math.round(Number(value));
+  if (!Number.isFinite(numericValue)) return DEFAULT_APP_SETTINGS.recommendationMinSeedRating;
+  return Math.max(
+    RECOMMENDATION_MIN_SEED_RATING_MIN,
+    Math.min(RECOMMENDATION_MIN_SEED_RATING_MAX, numericValue)
+  );
+};
 
 function readAppSettings() {
   try {
@@ -29,6 +43,10 @@ function readAppSettings() {
     const autoLoadMoreOnScroll = typeof parsed?.autoLoadMoreOnScroll === 'boolean'
       ? parsed.autoLoadMoreOnScroll
       : DEFAULT_APP_SETTINGS.autoLoadMoreOnScroll;
+    const recommendationMinSeedRating = normalizeRecommendationMinSeedRating(parsed?.recommendationMinSeedRating);
+    const recommendationMediaTypeFilter = RECOMMENDATION_MEDIA_TYPE_FILTERS.has(parsed?.recommendationMediaTypeFilter)
+      ? parsed.recommendationMediaTypeFilter
+      : DEFAULT_APP_SETTINGS.recommendationMediaTypeFilter;
     const importMode = parsed?.importMode === 'merge' ? 'merge' : 'replace';
     const reducedMotion = typeof parsed?.reducedMotion === 'boolean'
       ? parsed.reducedMotion
@@ -42,6 +60,8 @@ function readAppSettings() {
       librarySortDefault,
       persistCatalogFilters,
       autoLoadMoreOnScroll,
+      recommendationMinSeedRating,
+      recommendationMediaTypeFilter,
       importMode,
       reducedMotion,
       authorModeEnabled,
@@ -66,6 +86,8 @@ export function useAppSettings() {
   const [librarySortDefault, setLibrarySortDefault] = useState(savedSettings.librarySortDefault);
   const [persistCatalogFilters, setPersistCatalogFilters] = useState(savedSettings.persistCatalogFilters);
   const [autoLoadMoreOnScroll, setAutoLoadMoreOnScroll] = useState(savedSettings.autoLoadMoreOnScroll);
+  const [recommendationMinSeedRating, setRecommendationMinSeedRating] = useState(savedSettings.recommendationMinSeedRating);
+  const [recommendationMediaTypeFilter, setRecommendationMediaTypeFilter] = useState(savedSettings.recommendationMediaTypeFilter);
   const [importMode, setImportMode] = useState(savedSettings.importMode);
   const [reducedMotion, setReducedMotion] = useState(savedSettings.reducedMotion);
   const [authorModeEnabled, setAuthorModeEnabled] = useState(savedSettings.authorModeEnabled);
@@ -86,6 +108,8 @@ export function useAppSettings() {
       librarySortDefault,
       persistCatalogFilters,
       autoLoadMoreOnScroll,
+      recommendationMinSeedRating,
+      recommendationMediaTypeFilter,
       importMode,
       reducedMotion,
       authorModeEnabled,
@@ -96,6 +120,8 @@ export function useAppSettings() {
     librarySortDefault,
     persistCatalogFilters,
     autoLoadMoreOnScroll,
+    recommendationMinSeedRating,
+    recommendationMediaTypeFilter,
     importMode,
     reducedMotion,
     authorModeEnabled,
@@ -108,6 +134,8 @@ export function useAppSettings() {
     librarySortDefault, setLibrarySortDefault,
     persistCatalogFilters, setPersistCatalogFilters,
     autoLoadMoreOnScroll, setAutoLoadMoreOnScroll,
+    recommendationMinSeedRating, setRecommendationMinSeedRating,
+    recommendationMediaTypeFilter, setRecommendationMediaTypeFilter,
     importMode, setImportMode,
     reducedMotion, setReducedMotion,
     authorModeEnabled, setAuthorModeEnabled,

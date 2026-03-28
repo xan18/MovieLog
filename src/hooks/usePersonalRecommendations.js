@@ -3,6 +3,9 @@ import { tmdbFetchJson } from '../services/tmdb.js';
 import {
   PERSONAL_RECOMMENDATIONS_CACHE_TTL_MS,
   PERSONAL_RECOMMENDATIONS_MAX_RESULTS,
+  PERSONAL_RECOMMENDATIONS_MIN_SEED_RATING,
+  PERSONAL_RECOMMENDATIONS_MIN_SEED_RATING_MAX,
+  PERSONAL_RECOMMENDATIONS_MIN_SEED_RATING_MIN,
   PERSONAL_RECOMMENDATIONS_PAGE_SIZE,
   buildLibraryFingerprint,
   buildPersonalRecommendations,
@@ -17,12 +20,15 @@ import {
 } from '../services/personalRecommendations.js';
 
 const REQUEST_CONCURRENCY = 3;
+const RECOMMENDATION_MEDIA_TYPE_FILTERS = new Set(['all', 'movie', 'tv']);
 
 export function usePersonalRecommendations({
   library,
   lang,
   currentUserId,
   enabled = true,
+  minSeedRating = PERSONAL_RECOMMENDATIONS_MIN_SEED_RATING,
+  mediaTypeFilter = 'all',
   maxResults = PERSONAL_RECOMMENDATIONS_MAX_RESULTS,
   pageSize = PERSONAL_RECOMMENDATIONS_PAGE_SIZE,
   cacheTtlMs = PERSONAL_RECOMMENDATIONS_CACHE_TTL_MS,
@@ -35,7 +41,19 @@ export function usePersonalRecommendations({
   const [visibleCount, setVisibleCount] = useState(pageSize);
 
   const tmdbLanguage = lang === 'ru' ? 'ru-RU' : 'en-US';
-  const seeds = useMemo(() => pickRecommendationSeeds(library), [library]);
+  const normalizedMinSeedRating = Number.isFinite(Number(minSeedRating))
+    ? Math.max(
+      PERSONAL_RECOMMENDATIONS_MIN_SEED_RATING_MIN,
+      Math.min(PERSONAL_RECOMMENDATIONS_MIN_SEED_RATING_MAX, Math.round(Number(minSeedRating)))
+    )
+    : PERSONAL_RECOMMENDATIONS_MIN_SEED_RATING;
+  const normalizedMediaTypeFilter = RECOMMENDATION_MEDIA_TYPE_FILTERS.has(mediaTypeFilter)
+    ? mediaTypeFilter
+    : 'all';
+  const seeds = useMemo(
+    () => pickRecommendationSeeds(library, { minSeedRating: normalizedMinSeedRating }),
+    [library, normalizedMinSeedRating]
+  );
   const seedCount = seeds.length;
   const libraryFingerprint = useMemo(() => buildLibraryFingerprint(library), [library]);
 
@@ -43,7 +61,8 @@ export function usePersonalRecommendations({
     userId: currentUserId || 'anonymous',
     language: tmdbLanguage,
     libraryFingerprint,
-  }), [currentUserId, libraryFingerprint, tmdbLanguage]);
+    minSeedRating: normalizedMinSeedRating,
+  }), [currentUserId, libraryFingerprint, normalizedMinSeedRating, tmdbLanguage]);
   const hiddenRecommendationKeySet = useMemo(
     () => new Set(readHiddenPersonalRecommendationKeys(currentUserId || 'anonymous')),
     [currentUserId, hiddenVersion]
@@ -141,11 +160,12 @@ export function usePersonalRecommendations({
 
   const filteredRecommendations = useMemo(
     () => recommendations.filter((item) => {
+      if (normalizedMediaTypeFilter !== 'all' && item?.mediaType !== normalizedMediaTypeFilter) return false;
       const key = getPersonalRecommendationKey(item?.mediaType, item?.id);
       if (!key) return true;
       return !hiddenRecommendationKeySet.has(key);
     }),
-    [hiddenRecommendationKeySet, recommendations]
+    [hiddenRecommendationKeySet, normalizedMediaTypeFilter, recommendations]
   );
   const visibleRecommendations = useMemo(
     () => filteredRecommendations.slice(0, visibleCount),

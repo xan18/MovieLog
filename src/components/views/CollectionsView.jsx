@@ -49,6 +49,10 @@ export default function CollectionsView({
   authorModeEnabled,
   setAuthorModeEnabled,
   personalRecommendationsHiddenVersion,
+  recommendationMinSeedRating = 8,
+  setRecommendationMinSeedRating = () => {},
+  recommendationMediaTypeFilter = 'all',
+  setRecommendationMediaTypeFilter = () => {},
   getLibraryEntry,
   openQuickActions,
   onCardClick,
@@ -82,6 +86,7 @@ export default function CollectionsView({
   const [searchError, setSearchError] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [collectionsSection, setCollectionsSection] = useState('forYou');
+  const [isForYouSettingsModalOpen, setForYouSettingsModalOpen] = useState(false);
   const debouncedSearchQuery = useDebounce(searchQuery.trim(), 350);
   const collectionModalCloseTimerRef = useRef(null);
   const collectionSearchInputRef = useRef(null);
@@ -128,6 +133,8 @@ export default function CollectionsView({
     library,
     lang,
     currentUserId,
+    minSeedRating: recommendationMinSeedRating,
+    mediaTypeFilter: recommendationMediaTypeFilter,
     enabled: collectionsSection === 'forYou',
     hiddenVersion: personalRecommendationsHiddenVersion,
   });
@@ -153,6 +160,20 @@ export default function CollectionsView({
     { id: 'forYou', label: t.collectionsForYouTab },
     { id: 'curated', label: t.collections },
   ]), [t.collections, t.collectionsForYouTab]);
+  const forYouSeedThresholdOptions = useMemo(() => (
+    Array.from({ length: 10 }, (_, index) => {
+      const rating = index + 1;
+      return {
+        value: rating,
+        label: interpolate(t.forYouSeedThresholdOption || 'From {rating}', { rating }),
+      };
+    })
+  ), [t.forYouSeedThresholdOption]);
+  const forYouMediaTypeFilterOptions = useMemo(() => ([
+    { value: 'all', label: t.forYouFilterMediaTypeAll || t.contentTypeLabel },
+    { value: 'movie', label: t.forYouFilterMediaTypeMovies || t.movies },
+    { value: 'tv', label: t.forYouFilterMediaTypeTv || t.tvShows },
+  ]), [t.contentTypeLabel, t.forYouFilterMediaTypeAll, t.forYouFilterMediaTypeMovies, t.forYouFilterMediaTypeTv, t.movies, t.tvShows]);
 
   const selectedCollection = useMemo(
     () => collections.find((collection) => collection.id === selectedCollectionId) || null,
@@ -367,6 +388,18 @@ export default function CollectionsView({
     setCollectionModalClosing(false);
     setSelectedCollectionId('');
   }, [collectionsSection]);
+  useEffect(() => {
+    if (collectionsSection === 'forYou') return;
+    setForYouSettingsModalOpen(false);
+  }, [collectionsSection]);
+  useEffect(() => {
+    if (!isForYouSettingsModalOpen) return;
+    const onEsc = (event) => {
+      if (event.key === 'Escape') setForYouSettingsModalOpen(false);
+    };
+    window.addEventListener('keydown', onEsc);
+    return () => window.removeEventListener('keydown', onEsc);
+  }, [isForYouSettingsModalOpen]);
 
   const handleCreateCollection = async (event) => {
     event.preventDefault();
@@ -1308,17 +1341,26 @@ export default function CollectionsView({
             <div>
               <p className="text-sm font-black">{t.collectionsForYouTitle}</p>
               <p className="text-xs opacity-65 mt-1">
-                {interpolate(t.collectionsForYouSeedsCount, { count: recommendationSeedCount })}
+                {interpolate(t.collectionsForYouSeedsCount, { count: recommendationSeedCount, rating: recommendationMinSeedRating })}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={refreshRecommendations}
-              disabled={recommendationsLoading}
-              className="px-4 py-2 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest transition-all disabled:opacity-60"
-            >
-              {t.collectionsForYouRefresh}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setForYouSettingsModalOpen(true)}
+                className="px-4 py-2 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest transition-all"
+              >
+                {t.forYouSettingsButton || t.settings}
+              </button>
+              <button
+                type="button"
+                onClick={refreshRecommendations}
+                disabled={recommendationsLoading}
+                className="px-4 py-2 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest transition-all disabled:opacity-60"
+              >
+                {t.collectionsForYouRefresh}
+              </button>
+            </div>
           </div>
 
           {recommendationsError && (
@@ -1353,7 +1395,7 @@ export default function CollectionsView({
             <div className="empty-state">
               <div className="empty-state-icon" aria-hidden="true">{'\u2728'}</div>
               <p className="empty-state-title">{t.collectionsForYouSeedEmptyTitle}</p>
-              <p className="empty-state-hint">{t.collectionsForYouSeedEmptyHint}</p>
+              <p className="empty-state-hint">{interpolate(t.collectionsForYouSeedEmptyHint, { rating: recommendationMinSeedRating })}</p>
             </div>
           )}
 
@@ -1447,6 +1489,63 @@ export default function CollectionsView({
           )}
         </>
       )}
+
+      {isForYouSettingsModalOpen && typeof document !== 'undefined' && createPortal((
+        <div className="fixed inset-0 z-[220] flex items-center justify-center p-4" onClick={() => setForYouSettingsModalOpen(false)}>
+          <div className="absolute inset-0 modal-overlay" />
+          <div
+            className="relative w-full max-w-xl glass app-panel-padded p-4 md:p-5 space-y-4"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-50 mb-2">{t.collectionsForYouTab}</p>
+                <h3 className="text-xl md:text-2xl font-black leading-tight">{t.forYouSettingsModalTitle || t.forYouSettingsTitle}</h3>
+                <p className="text-xs opacity-60 mt-1">{t.forYouSettingsModalHint || t.forYouSeedThresholdHint}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setForYouSettingsModalOpen(false)}
+                className="collections-modal-close"
+                aria-label={t.close}
+                title={t.close}
+              >
+                {'\u2715'}
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-[11px] font-bold uppercase tracking-widest opacity-50">{t.forYouSeedThresholdLabel || t.collectionsForYouTitle}</p>
+              <p className="text-xs opacity-60">{t.forYouSeedThresholdHint || t.collectionsForYouSeedEmptyHint}</p>
+              <CustomSelect
+                value={recommendationMinSeedRating}
+                options={forYouSeedThresholdOptions}
+                onChange={setRecommendationMinSeedRating}
+                ariaLabel={t.forYouSeedThresholdLabel || t.collectionsForYouTitle}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-[11px] font-bold uppercase tracking-widest opacity-50">{t.forYouFilterMediaTypeLabel || t.contentTypeLabel}</p>
+              <p className="text-xs opacity-60">{t.forYouFilterMediaTypeHint || t.collectionsForYouTab}</p>
+              <CustomSelect
+                value={recommendationMediaTypeFilter}
+                options={forYouMediaTypeFilterOptions}
+                onChange={setRecommendationMediaTypeFilter}
+                ariaLabel={t.forYouFilterMediaTypeLabel || t.contentTypeLabel}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setForYouSettingsModalOpen(false)}
+              className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-black text-xs uppercase tracking-widest transition-all"
+            >
+              {t.close}
+            </button>
+          </div>
+        </div>
+      ), document.body)}
     </div>
   );
 }

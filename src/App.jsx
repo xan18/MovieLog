@@ -103,6 +103,8 @@ export default function App() {
     librarySortDefault, setLibrarySortDefault,
     persistCatalogFilters, setPersistCatalogFilters,
     autoLoadMoreOnScroll, setAutoLoadMoreOnScroll,
+    recommendationMinSeedRating, setRecommendationMinSeedRating,
+    recommendationMediaTypeFilter, setRecommendationMediaTypeFilter,
     importMode, setImportMode,
     reducedMotion, setReducedMotion,
     authorModeEnabled, setAuthorModeEnabled,
@@ -866,6 +868,10 @@ export default function App() {
           authorModeEnabled={authorModeEnabled}
           setAuthorModeEnabled={setAuthorModeEnabled}
           personalRecommendationsHiddenVersion={personalRecommendationsHiddenVersion}
+          recommendationMinSeedRating={recommendationMinSeedRating}
+          setRecommendationMinSeedRating={setRecommendationMinSeedRating}
+          recommendationMediaTypeFilter={recommendationMediaTypeFilter}
+          setRecommendationMediaTypeFilter={setRecommendationMediaTypeFilter}
           getLibraryEntry={getLibraryEntry}
           openQuickActions={openQuickActions}
           onCardClick={onCardClick}

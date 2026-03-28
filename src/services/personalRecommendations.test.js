@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildPersonalRecommendations } from './personalRecommendations.js';
+import {
+  buildPersonalRecommendations,
+  buildPersonalRecommendationsCacheKey,
+  pickRecommendationSeeds,
+} from './personalRecommendations.js';
 
 describe('buildPersonalRecommendations', () => {
   it('deduplicates strictly by (mediaType, id)', () => {
@@ -69,5 +73,72 @@ describe('buildPersonalRecommendations', () => {
     expect(recommendations.some((item) => item.id === 900)).toBe(false);
     expect(recommendations[0].recommendationScore).toBeGreaterThan(recommendations[1].recommendationScore);
     expect(recommendations[0].recommendationReasonSeeds[0].title).toBe('Seed A');
+  });
+});
+
+describe('pickRecommendationSeeds', () => {
+  const sampleLibrary = [
+    { mediaType: 'movie', id: 10, rating: 5, dateAdded: 1000, title: 'Five' },
+    { mediaType: 'movie', id: 11, rating: 7, dateAdded: 1500, title: 'Seven' },
+    { mediaType: 'movie', id: 20, rating: 8, dateAdded: 2000, title: 'Eight' },
+  ];
+
+  it('uses 8+ threshold by default', () => {
+    const seeds = pickRecommendationSeeds(sampleLibrary);
+    expect(seeds.map((seed) => seed.id)).toEqual([20]);
+  });
+
+  it('accepts any custom threshold from 1 to 10', () => {
+    const seeds = pickRecommendationSeeds(sampleLibrary, { minSeedRating: 5 });
+    expect(seeds.map((seed) => seed.id)).toEqual([20, 11, 10]);
+  });
+});
+
+describe('buildPersonalRecommendationsCacheKey', () => {
+  it('changes cache key when min seed rating changes', () => {
+    const baseParams = {
+      userId: 'u-1',
+      language: 'en-US',
+      libraryFingerprint: 'movie:10:8:1000',
+    };
+
+    const keyFor8 = buildPersonalRecommendationsCacheKey({
+      ...baseParams,
+      minSeedRating: 8,
+    });
+    const keyFor7 = buildPersonalRecommendationsCacheKey({
+      ...baseParams,
+      minSeedRating: 6,
+    });
+
+    expect(keyFor8).not.toBe(keyFor7);
+  });
+
+  it('normalizes out-of-range minSeedRating values', () => {
+    const baseParams = {
+      userId: 'u-1',
+      language: 'en-US',
+      libraryFingerprint: 'movie:10:8:1000',
+    };
+
+    const keyMin0 = buildPersonalRecommendationsCacheKey({
+      ...baseParams,
+      minSeedRating: 0,
+    });
+    const keyMin1 = buildPersonalRecommendationsCacheKey({
+      ...baseParams,
+      minSeedRating: 1,
+    });
+    const keyMin99 = buildPersonalRecommendationsCacheKey({
+      ...baseParams,
+      minSeedRating: 99,
+    });
+    const keyMin10 = buildPersonalRecommendationsCacheKey({
+      ...baseParams,
+      minSeedRating: 10,
+    });
+
+    expect(keyMin0).toBe(keyMin1);
+    expect(keyMin99).toBe(keyMin10);
   });
 });
