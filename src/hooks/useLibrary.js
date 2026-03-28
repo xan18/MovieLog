@@ -51,6 +51,9 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
               }
               return { ...x, status };
             }
+            if (status === 'planned') {
+              return { ...x, status, rating: 0 };
+            }
             return { ...x, status, rating: ratingVal || x.rating };
           }
           return x;

@@ -67,7 +67,7 @@ export default function QuickActionsMenu({
                 onClick={() => applyQuickTvAction(quickActions.item, s.id)}
                 className={`w-full text-left px-3 py-2 rounded-xl border text-xs font-bold uppercase tracking-wide ${s.id === 'completed' && !isReleasedItem(quickActions.item) ? 'bg-white/5 border-white/5 text-white/40 cursor-not-allowed' : 'bg-white/5 hover:bg-white/10 border-white/10'}`}
               >
-                {s.label}
+                {s.id === 'planned' ? t.toPlans : s.label}
               </button>
             ))}
             {getLibraryEntry('tv', quickActions.item.id) && (

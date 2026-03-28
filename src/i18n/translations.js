@@ -21,7 +21,7 @@
         loadMore: 'Загрузить ещё', details: 'Подробнее',
         byImdbRating: 'По рейтингу IMDb', byMyRating: 'По моей оценке', byRemainingEpisodes: 'По оставшимся сериям', byDateAdded: 'По дате добавления', byReleaseYear: 'По году выхода',
         empty: 'Пусто',
-        watching: 'Смотрю', planned: 'Буду смотреть', completed: 'Просмотрен',
+        watching: 'Смотрю', planned: 'В планах', completed: 'Просмотрен',
         dropped: 'Бросил', onHold: 'Приостановил', archive: 'Просмотрен',
         waiting: 'В ожидании', waitingForNewEpisodes: 'В ожидании новых серий',
         badgeWatching: 'Смотрю', badgePlanned: 'В планах', badgeCompleted: 'Просмотрен',
