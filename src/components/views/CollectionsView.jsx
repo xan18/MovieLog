@@ -39,6 +39,79 @@ const interpolate = (template, values = {}) => {
   return result;
 };
 
+const COLLECTION_PREVIEW_COUNT = 3;
+const COLLECTION_PREVIEW_MODE = 'latest'; // 'latest' | 'first'
+const getCollectionPreviewKey = (mediaType, tmdbId) => `${mediaType}-${Number(tmdbId)}`;
+const toTimestamp = (value) => {
+  const parsed = Date.parse(value || '');
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+const COLLECTIONS_SORT_ORDER_SCHEMA_MESSAGE = 'Collections ordering requires sort_order column. Run supabase/collections_sort_order_schema.sql.';
+const isMissingCollectionsSortOrderError = (error) => {
+  const code = String(error?.code || '').trim().toUpperCase();
+  if (code === '42703' || code === 'PGRST204' || code === 'PGRST205') return true;
+  const message = String(error?.message || '').toLowerCase();
+  return message.includes('sort_order') && (
+    message.includes('column')
+    || message.includes('schema cache')
+    || message.includes('not found')
+  );
+};
+const COLLECTIONS_FAVORITES_STORAGE_PREFIX = 'movielog:collections:favorites:v1';
+const buildCollectionFavoritesStorageKey = (userId) => {
+  const normalizedUserId = String(userId || 'anonymous').trim() || 'anonymous';
+  return `${COLLECTIONS_FAVORITES_STORAGE_PREFIX}:${normalizedUserId}`;
+};
+const normalizeCollectionFavoriteIds = (favoriteIds) => (
+  Array.from(new Set(
+    (Array.isArray(favoriteIds) ? favoriteIds : [])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+  ))
+);
+const readCollectionFavoriteIds = (userId) => {
+  if (typeof window === 'undefined' || !window.localStorage) return [];
+  const storageKey = buildCollectionFavoritesStorageKey(userId);
+
+  try {
+    const rawValue = window.localStorage.getItem(storageKey);
+    if (!rawValue) return [];
+
+    const parsed = JSON.parse(rawValue);
+    if (!Array.isArray(parsed)) {
+      window.localStorage.removeItem(storageKey);
+      return [];
+    }
+
+    const normalized = normalizeCollectionFavoriteIds(parsed);
+    if (normalized.length !== parsed.length) {
+      if (normalized.length === 0) window.localStorage.removeItem(storageKey);
+      else window.localStorage.setItem(storageKey, JSON.stringify(normalized));
+    }
+    return normalized;
+  } catch {
+    try {
+      window.localStorage.removeItem(storageKey);
+    } catch {
+      // ignore
+    }
+    return [];
+  }
+};
+const writeCollectionFavoriteIds = (userId, favoriteIds) => {
+  if (typeof window === 'undefined' || !window.localStorage) return false;
+  const storageKey = buildCollectionFavoritesStorageKey(userId);
+  const normalized = normalizeCollectionFavoriteIds(favoriteIds);
+
+  try {
+    if (normalized.length === 0) window.localStorage.removeItem(storageKey);
+    else window.localStorage.setItem(storageKey, JSON.stringify(normalized));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export default function CollectionsView({
   t,
   lang,
@@ -62,6 +135,10 @@ export default function CollectionsView({
   const [collections, setCollections] = useState([]);
   const [collectionsLoading, setCollectionsLoading] = useState(true);
   const [collectionsError, setCollectionsError] = useState('');
+  const [collectionsOrderSupported, setCollectionsOrderSupported] = useState(true);
+  const [draggingCollectionCardId, setDraggingCollectionCardId] = useState('');
+  const [dragOverCollectionCardId, setDragOverCollectionCardId] = useState('');
+  const [dragOverCollectionCardPosition, setDragOverCollectionCardPosition] = useState('');
   const [selectedCollectionId, setSelectedCollectionId] = useState('');
   const [isCollectionModalOpen, setCollectionModalOpen] = useState(false);
   const [isCollectionModalClosing, setCollectionModalClosing] = useState(false);
@@ -70,6 +147,7 @@ export default function CollectionsView({
   const [collectionItems, setCollectionItems] = useState([]);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [itemsError, setItemsError] = useState('');
+  const [collectionPreviewMap, setCollectionPreviewMap] = useState({});
 
   const [createDraft, setCreateDraft] = useState(createEmptyDraft);
   const [editDraft, setEditDraft] = useState(createEmptyDraft);
@@ -86,10 +164,15 @@ export default function CollectionsView({
   const [searchError, setSearchError] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [collectionsSection, setCollectionsSection] = useState('forYou');
+  const [curatedVisibilityFilter, setCuratedVisibilityFilter] = useState('public');
+  const [favoriteCollectionIds, setFavoriteCollectionIds] = useState([]);
+  const [favoritesHydratedKey, setFavoritesHydratedKey] = useState('');
   const [isForYouSettingsModalOpen, setForYouSettingsModalOpen] = useState(false);
   const debouncedSearchQuery = useDebounce(searchQuery.trim(), 350);
   const collectionModalCloseTimerRef = useRef(null);
   const collectionSearchInputRef = useRef(null);
+  const collectionPreviewCacheRef = useRef(new Map());
+  const suppressCollectionCardClickRef = useRef(false);
 
   const TMDB_LANG = lang === 'ru' ? 'ru-RU' : 'en-US';
   const openRecommendationQuickActions = useCallback((item, x, y) => {
@@ -120,6 +203,15 @@ export default function CollectionsView({
     if (consumeRecommendationLongPress()) return;
     onCardClick(item);
   };
+  const toggleCollectionFavorite = useCallback((collectionId) => {
+    const normalizedId = String(collectionId || '').trim();
+    if (!normalizedId) return;
+
+    setFavoriteCollectionIds((prev) => {
+      if (prev.includes(normalizedId)) return prev.filter((id) => id !== normalizedId);
+      return [normalizedId, ...prev];
+    });
+  }, []);
 
   const {
     seedCount: recommendationSeedCount,
@@ -160,6 +252,18 @@ export default function CollectionsView({
     { id: 'forYou', label: t.collectionsForYouTab },
     { id: 'curated', label: t.collections },
   ]), [t.collections, t.collectionsForYouTab]);
+  const curatedVisibilityOptions = useMemo(() => ([
+    { value: 'public', label: t.collectionsFilterPublic || t.collectionsVisibilityPublic },
+    { value: 'personal', label: t.collectionsFilterPersonal || t.collectionsVisibilityPrivate },
+    { value: 'favorites', label: t.collectionsFilterFavorites || t.collectionsFavoriteAdd || 'Favorites' },
+  ]), [
+    t.collectionsFavoriteAdd,
+    t.collectionsFilterFavorites,
+    t.collectionsFilterPersonal,
+    t.collectionsFilterPublic,
+    t.collectionsVisibilityPrivate,
+    t.collectionsVisibilityPublic,
+  ]);
   const forYouSeedThresholdOptions = useMemo(() => (
     Array.from({ length: 10 }, (_, index) => {
       const rating = index + 1;
@@ -179,6 +283,48 @@ export default function CollectionsView({
     () => collections.find((collection) => collection.id === selectedCollectionId) || null,
     [collections, selectedCollectionId]
   );
+  const favoriteCollectionIdSet = useMemo(
+    () => new Set(favoriteCollectionIds),
+    [favoriteCollectionIds]
+  );
+  const visibleCollections = useMemo(() => {
+    const normalizedCurrentUserId = String(currentUserId || '').trim();
+    const favoritePriority = new Map(favoriteCollectionIds.map((id, index) => [id, index]));
+    const isOwner = (collection) => String(collection?.owner_user_id || '').trim() === normalizedCurrentUserId;
+    const isPublicCollection = (collection) => String(collection?.visibility || 'public') !== 'private';
+    const isPersonalCollection = (collection) => (
+      String(collection?.visibility || 'public') === 'private'
+      && Boolean(normalizedCurrentUserId)
+      && isOwner(collection)
+    );
+
+    const filtered = collections.filter((collection) => {
+      if (curatedVisibilityFilter === 'personal') return isPersonalCollection(collection);
+      if (curatedVisibilityFilter === 'favorites') {
+        const collectionId = String(collection?.id || '');
+        if (!favoritePriority.has(collectionId)) return false;
+        return isPublicCollection(collection) || isOwner(collection);
+      }
+      return isPublicCollection(collection);
+    });
+
+    if (curatedVisibilityFilter !== 'favorites') return filtered;
+
+    return [...filtered].sort((left, right) => {
+      const leftPriority = favoritePriority.get(String(left.id || '')) ?? Number.POSITIVE_INFINITY;
+      const rightPriority = favoritePriority.get(String(right.id || '')) ?? Number.POSITIVE_INFINITY;
+      if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+      return 0;
+    });
+  }, [collections, currentUserId, curatedVisibilityFilter, favoriteCollectionIds]);
+  const canReorderCollections = useMemo(() => (
+    Boolean(
+      isAuthor
+      && collectionsOrderSupported
+      && curatedVisibilityFilter !== 'favorites'
+      && visibleCollections.length > 1
+    )
+  ), [collectionsOrderSupported, curatedVisibilityFilter, isAuthor, visibleCollections.length]);
 
   const canManageSelected = Boolean(
     isAuthor
@@ -211,20 +357,48 @@ export default function CollectionsView({
     setCollectionsLoading(true);
     setCollectionsError('');
 
-    const { data, error } = await supabase
+    const primaryResponse = await supabase
       .from('curated_collections')
-      .select('id, owner_user_id, visibility, title_ru, title_en, description_ru, description_en, created_at, updated_at')
+      .select('id, owner_user_id, visibility, title_ru, title_en, description_ru, description_en, sort_order, created_at, updated_at')
+      .order('sort_order', { ascending: true })
       .order('updated_at', { ascending: false })
       .order('created_at', { ascending: false });
 
-    if (error) {
-      setCollections([]);
-      setCollectionsError(error.message);
+    if (primaryResponse.error && isMissingCollectionsSortOrderError(primaryResponse.error)) {
+      const fallbackResponse = await supabase
+        .from('curated_collections')
+        .select('id, owner_user_id, visibility, title_ru, title_en, description_ru, description_en, created_at, updated_at')
+        .order('updated_at', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (fallbackResponse.error) {
+        setCollections([]);
+        setCollectionsOrderSupported(false);
+        setCollectionsError(fallbackResponse.error.message);
+        setCollectionsLoading(false);
+        return;
+      }
+
+      const normalizedCollections = (fallbackResponse.data || []).map((collection, index) => ({
+        ...collection,
+        sort_order: index + 1,
+      }));
+      setCollections(normalizedCollections);
+      setCollectionsOrderSupported(false);
       setCollectionsLoading(false);
       return;
     }
 
-    setCollections(data || []);
+    if (primaryResponse.error) {
+      setCollections([]);
+      setCollectionsOrderSupported(true);
+      setCollectionsError(primaryResponse.error.message);
+      setCollectionsLoading(false);
+      return;
+    }
+
+    setCollections(primaryResponse.data || []);
+    setCollectionsOrderSupported(true);
     setCollectionsLoading(false);
   }, [currentUserId]);
 
@@ -289,6 +463,140 @@ export default function CollectionsView({
   useEffect(() => {
     loadCollections();
   }, [loadCollections]);
+
+  useEffect(() => {
+    const storageKey = buildCollectionFavoritesStorageKey(currentUserId);
+    const persistedFavorites = readCollectionFavoriteIds(currentUserId);
+    setFavoriteCollectionIds(persistedFavorites);
+    setFavoritesHydratedKey(storageKey);
+  }, [currentUserId]);
+
+  useEffect(() => {
+    const storageKey = buildCollectionFavoritesStorageKey(currentUserId);
+    if (favoritesHydratedKey !== storageKey) return;
+    writeCollectionFavoriteIds(currentUserId, favoriteCollectionIds);
+  }, [currentUserId, favoriteCollectionIds, favoritesHydratedKey]);
+
+  useEffect(() => {
+    setFavoriteCollectionIds((prev) => {
+      if (prev.length === 0) return prev;
+      const collectionIdSet = new Set(collections.map((collection) => String(collection.id || '')));
+      const filtered = prev.filter((id) => collectionIdSet.has(id));
+      return filtered.length === prev.length ? prev : filtered;
+    });
+  }, [collections]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCollectionPreviews = async () => {
+      if (!supabase || collections.length === 0) {
+        setCollectionPreviewMap({});
+        return;
+      }
+
+      const collectionIds = collections.map((collection) => collection.id).filter(Boolean);
+      if (collectionIds.length === 0) {
+        setCollectionPreviewMap({});
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('curated_collection_items')
+        .select('collection_id, media_type, tmdb_id, sort_order, created_at')
+        .in('collection_id', collectionIds)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true });
+
+      if (cancelled) return;
+
+      if (error) {
+        console.warn('Failed to load collection preview rows', error);
+        setCollectionPreviewMap({});
+        return;
+      }
+
+      const groupedRows = new Map(collectionIds.map((id) => [id, []]));
+      (Array.isArray(data) ? data : []).forEach((row) => {
+        if (!groupedRows.has(row.collection_id)) groupedRows.set(row.collection_id, []);
+        groupedRows.get(row.collection_id).push(row);
+      });
+
+      const previewRowsByCollection = new Map();
+      const neededKeys = new Set();
+
+      groupedRows.forEach((rows, collectionId) => {
+        const orderedRows = [...rows].sort((a, b) => (
+          ((Number(a.sort_order) || 0) - (Number(b.sort_order) || 0))
+          || (toTimestamp(a.created_at) - toTimestamp(b.created_at))
+        ));
+        const previewRows = COLLECTION_PREVIEW_MODE === 'first'
+          ? orderedRows.slice(0, COLLECTION_PREVIEW_COUNT)
+          : orderedRows.slice(-COLLECTION_PREVIEW_COUNT);
+        previewRowsByCollection.set(collectionId, previewRows);
+
+        previewRows.forEach((row) => {
+          const tmdbId = Number(row.tmdb_id);
+          if (!row.media_type || !Number.isFinite(tmdbId) || tmdbId <= 0) return;
+          neededKeys.add(getCollectionPreviewKey(row.media_type, tmdbId));
+        });
+      });
+
+      const previewCache = collectionPreviewCacheRef.current;
+      const missingKeys = Array.from(neededKeys).filter((key) => !previewCache.has(key));
+
+      if (missingKeys.length > 0) {
+        await Promise.all(missingKeys.map(async (previewKey) => {
+          const [mediaType, tmdbIdRaw] = String(previewKey).split('-');
+          const tmdbId = Number(tmdbIdRaw);
+          if (!mediaType || !Number.isFinite(tmdbId) || tmdbId <= 0) {
+            previewCache.set(previewKey, null);
+            return;
+          }
+
+          try {
+            const detail = await tmdbFetchJson(`/${mediaType}/${tmdbId}`, { language: TMDB_LANG });
+            previewCache.set(previewKey, {
+              posterPath: detail?.poster_path || null,
+              title: detail?.title || detail?.name || `TMDB #${tmdbId}`,
+            });
+          } catch (previewError) {
+            console.warn(`Failed to load collection preview for ${previewKey}`, previewError);
+            previewCache.set(previewKey, {
+              posterPath: null,
+              title: `TMDB #${tmdbId}`,
+            });
+          }
+        }));
+      }
+
+      if (cancelled) return;
+
+      const nextPreviewMap = {};
+      collectionIds.forEach((collectionId) => {
+        const previewRows = previewRowsByCollection.get(collectionId) || [];
+        nextPreviewMap[collectionId] = previewRows.map((row) => {
+          const key = getCollectionPreviewKey(row.media_type, row.tmdb_id);
+          const cached = previewCache.get(key);
+          return {
+            key,
+            mediaType: row.media_type,
+            id: Number(row.tmdb_id),
+            posterPath: cached?.posterPath || null,
+            title: cached?.title || `TMDB #${row.tmdb_id}`,
+          };
+        });
+      });
+
+      setCollectionPreviewMap(nextPreviewMap);
+    };
+
+    loadCollectionPreviews();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [collections, TMDB_LANG]);
 
   useEffect(() => {
     if (!collections.length) {
@@ -412,14 +720,23 @@ export default function CollectionsView({
       return;
     }
 
+    const nextCollectionSortOrder = collections.reduce((max, collection) => {
+      const sortOrder = Number(collection?.sort_order) || 0;
+      return Math.max(max, sortOrder);
+    }, 0) + 1;
+    const insertPayload = {
+      owner_user_id: currentUserId,
+      ...payload,
+    };
+    if (collectionsOrderSupported) {
+      insertPayload.sort_order = nextCollectionSortOrder;
+    }
+
     setMutating(true);
     clearFeedback();
     const { data, error } = await supabase
       .from('curated_collections')
-      .insert({
-        owner_user_id: currentUserId,
-        ...payload,
-      })
+      .insert(insertPayload)
       .select('id')
       .single();
 
@@ -799,6 +1116,143 @@ export default function CollectionsView({
   const handleOrderTouchCancel = () => {
     resetOrderDragState();
   };
+  const resetCollectionCardDragState = useCallback(() => {
+    setDraggingCollectionCardId('');
+    setDragOverCollectionCardId('');
+    setDragOverCollectionCardPosition('');
+  }, []);
+  const resolveCollectionCardDropIndex = useCallback((sourceId, targetId, position) => {
+    const sourceIndex = visibleCollections.findIndex((collection) => String(collection.id) === String(sourceId));
+    const targetIndexBase = visibleCollections.findIndex((collection) => String(collection.id) === String(targetId));
+    if (sourceIndex < 0 || targetIndexBase < 0) return null;
+
+    let nextIndex = targetIndexBase + (position === 'after' ? 1 : 0);
+    if (sourceIndex < nextIndex) nextIndex -= 1;
+    return { sourceIndex, nextIndex };
+  }, [visibleCollections]);
+  const mergeVisibleCollectionsOrderLocally = useCallback((orderedVisibleCollections) => {
+    if (!Array.isArray(orderedVisibleCollections) || orderedVisibleCollections.length === 0) return collections;
+
+    const orderedVisibleSet = new Set(
+      orderedVisibleCollections.map((collection) => String(collection?.id || ''))
+    );
+    const visibleSlotIndexes = [];
+    collections.forEach((collection, index) => {
+      if (orderedVisibleSet.has(String(collection?.id || ''))) visibleSlotIndexes.push(index);
+    });
+
+    const nextCollections = [...collections];
+    visibleSlotIndexes.forEach((slotIndex, orderIndex) => {
+      const nextCollection = orderedVisibleCollections[orderIndex];
+      if (nextCollection) nextCollections[slotIndex] = nextCollection;
+    });
+
+    const normalizedCollections = nextCollections.map((collection, index) => ({
+      ...collection,
+      sort_order: index + 1,
+    }));
+    setCollections(normalizedCollections);
+    return normalizedCollections;
+  }, [collections]);
+  const persistCollectionsOrder = useCallback(async (orderedCollections, rollbackCollections = null) => {
+    if (!isAuthor || !collectionsOrderSupported) return false;
+    if (!Array.isArray(orderedCollections) || orderedCollections.length === 0) return false;
+
+    setMutating(true);
+    clearFeedback();
+
+    for (const collection of orderedCollections) {
+      const { error } = await supabase
+        .from('curated_collections')
+        .update({ sort_order: Number(collection?.sort_order) || 1 })
+        .eq('id', collection.id);
+
+      if (error) {
+        if (Array.isArray(rollbackCollections)) setCollections(rollbackCollections);
+        if (isMissingCollectionsSortOrderError(error)) {
+          setCollectionsOrderSupported(false);
+          setManageError(t.collectionsReorderSchemaHint || COLLECTIONS_SORT_ORDER_SCHEMA_MESSAGE);
+        } else {
+          setManageError(error.message);
+        }
+        setMutating(false);
+        return false;
+      }
+    }
+
+    setManageNotice(t.collectionsOrderSaved || t.collectionsUpdated);
+    setMutating(false);
+    return true;
+  }, [collectionsOrderSupported, isAuthor, t.collectionsOrderSaved, t.collectionsReorderSchemaHint, t.collectionsUpdated]);
+  const moveCollectionCardToIndex = useCallback(async (collectionId, targetIndex) => {
+    if (!canReorderCollections || mutating) return;
+
+    const currentIndex = visibleCollections.findIndex((collection) => String(collection.id) === String(collectionId));
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= visibleCollections.length || currentIndex === targetIndex) return;
+
+    const reorderedVisibleCollections = [...visibleCollections];
+    const [movedCollection] = reorderedVisibleCollections.splice(currentIndex, 1);
+    if (!movedCollection) return;
+    reorderedVisibleCollections.splice(targetIndex, 0, movedCollection);
+
+    const rollbackCollections = collections;
+    const normalizedCollections = mergeVisibleCollectionsOrderLocally(reorderedVisibleCollections);
+    await persistCollectionsOrder(normalizedCollections, rollbackCollections);
+  }, [canReorderCollections, collections, mergeVisibleCollectionsOrderLocally, mutating, persistCollectionsOrder, visibleCollections]);
+  const handleCollectionCardDragStart = (event, collectionId) => {
+    if (!canReorderCollections || mutating) {
+      event.preventDefault();
+      return;
+    }
+    const normalizedId = String(collectionId);
+    suppressCollectionCardClickRef.current = true;
+    setDraggingCollectionCardId(normalizedId);
+    setDragOverCollectionCardId(normalizedId);
+    setDragOverCollectionCardPosition('before');
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', normalizedId);
+  };
+  const handleCollectionCardDragOver = (event, targetCollectionId) => {
+    if (!draggingCollectionCardId || mutating) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDragOverCollectionCardId(String(targetCollectionId));
+    setDragOverCollectionCardPosition(getDropPosition(event));
+  };
+  const handleCollectionCardDrop = async (event, targetCollectionId) => {
+    event.preventDefault();
+    if (mutating) {
+      resetCollectionCardDragState();
+      return;
+    }
+
+    const draggedId = draggingCollectionCardId || event.dataTransfer.getData('text/plain');
+    if (!draggedId) {
+      resetCollectionCardDragState();
+      return;
+    }
+
+    const resolved = resolveCollectionCardDropIndex(draggedId, targetCollectionId, getDropPosition(event));
+    resetCollectionCardDragState();
+    if (!resolved || resolved.nextIndex === resolved.sourceIndex) return;
+    await moveCollectionCardToIndex(draggedId, resolved.nextIndex);
+  };
+  const handleCollectionCardDragEnd = () => {
+    resetCollectionCardDragState();
+    window.setTimeout(() => {
+      suppressCollectionCardClickRef.current = false;
+    }, 120);
+  };
+  useEffect(() => {
+    resetCollectionCardDragState();
+    suppressCollectionCardClickRef.current = false;
+  }, [collectionsSection, curatedVisibilityFilter, resetCollectionCardDragState]);
+  const curatedEmptyTitle = curatedVisibilityFilter === 'favorites'
+    ? (t.collectionsFavoritesEmptyTitle || t.collectionsFilterEmptyTitle || t.empty)
+    : (t.collectionsFilterEmptyTitle || t.empty);
+  const curatedEmptyHint = curatedVisibilityFilter === 'favorites'
+    ? (t.collectionsFavoritesEmptyHint || t.collectionsFilterEmptyHint || t.collectionsNoCollectionsHint)
+    : (t.collectionsFilterEmptyHint || t.collectionsNoCollectionsHint);
 
   return (
     <div className="view-stack">
@@ -852,55 +1306,6 @@ export default function CollectionsView({
         </div>
       )}
 
-      {!collectionsLoading && collections.length > 0 && (
-        <div className="collections-grid">
-          {collections.map((collection) => {
-            const title = getLocalized(lang, collection.title_ru, collection.title_en) || t.collectionsUntitled;
-            const description = getLocalized(lang, collection.description_ru, collection.description_en);
-            const visibilityLabel = collection.visibility === 'private'
-              ? t.collectionsVisibilityPrivate
-              : t.collectionsVisibilityPublic;
-            const updatedAt = collection.updated_at
-              ? new Date(collection.updated_at).toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'en-US')
-              : '';
-            return (
-              <button
-                key={collection.id}
-                type="button"
-                onClick={() => openCollectionModal(collection.id)}
-                className="collections-large-card"
-              >
-                <div className="collections-large-card-head">
-                  <p className="collections-large-card-title">{title}</p>
-                  <span className="tag shrink-0">{visibilityLabel}</span>
-                </div>
-                <p className={`collections-large-card-description ${description ? '' : 'opacity-45'}`}>
-                  {description || t.collectionsEmptyHint}
-                </p>
-                <div className="collections-large-card-foot">
-                  <span className="text-xs opacity-55">{updatedAt}</span>
-                  <span className="collections-large-card-open">{t.details}</span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {collectionsLoading && (
-        <div className="glass app-panel p-5">
-          <p className="text-sm opacity-80">{t.loading}</p>
-        </div>
-      )}
-
-      {!collectionsLoading && collections.length === 0 && (
-        <div className="empty-state">
-          <div className="empty-state-icon" aria-hidden="true">{'\u{1F4DA}'}</div>
-          <p className="empty-state-title">{t.collectionsNoCollectionsTitle}</p>
-          <p className="empty-state-hint">{t.collectionsNoCollectionsHint}</p>
-        </div>
-      )}
-
       {isAuthor && (
         <div className="glass app-panel overflow-visible p-5 space-y-4">
           <p className="text-sm font-black">{t.collectionsCreateTitle}</p>
@@ -945,6 +1350,157 @@ export default function CollectionsView({
               {t.collectionsCreate}
             </button>
           </form>
+        </div>
+      )}
+
+      {!collectionsLoading && collections.length > 0 && (
+        <>
+          <div className="collections-curated-toolbar">
+            <div className="collections-curated-filter" role="tablist" aria-label={t.collectionsVisibilityLabel}>
+              {curatedVisibilityOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="tab"
+                  aria-selected={curatedVisibilityFilter === option.value}
+                  onClick={() => setCuratedVisibilityFilter(option.value)}
+                  className={`collections-curated-filter-btn ${curatedVisibilityFilter === option.value ? 'active' : ''}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {isAuthor && (
+            <p className="collections-reorder-hint">
+              {collectionsOrderSupported
+                ? (t.collectionsReorderHint || '')
+                : (t.collectionsReorderSchemaHint || COLLECTIONS_SORT_ORDER_SCHEMA_MESSAGE)}
+            </p>
+          )}
+
+          {visibleCollections.length > 0 ? (
+            <div className="collections-grid">
+              {visibleCollections.map((collection) => {
+                const title = getLocalized(lang, collection.title_ru, collection.title_en) || t.collectionsUntitled;
+                const description = getLocalized(lang, collection.description_ru, collection.description_en);
+                const previewItems = (collectionPreviewMap[collection.id] || []).slice(0, COLLECTION_PREVIEW_COUNT);
+                const updatedAt = collection.updated_at
+                  ? new Date(collection.updated_at).toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'en-US')
+                  : '';
+                const isFavorite = favoriteCollectionIdSet.has(String(collection.id || ''));
+                const collectionCardId = String(collection.id || '');
+                const isDraggingCard = draggingCollectionCardId === collectionCardId;
+                const isCardDragTarget = !isDraggingCard
+                  && draggingCollectionCardId
+                  && dragOverCollectionCardId === collectionCardId;
+                const cardDragStateClass = isCardDragTarget
+                  ? (dragOverCollectionCardPosition === 'after' ? 'drag-over-after' : 'drag-over-before')
+                  : '';
+                const cardClassName = [
+                  'collections-large-card',
+                  canReorderCollections ? 'reorderable' : '',
+                  isDraggingCard ? 'dragging' : '',
+                  cardDragStateClass,
+                ].filter(Boolean).join(' ');
+
+                return (
+                  <article
+                    key={collection.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      if (suppressCollectionCardClickRef.current) return;
+                      openCollectionModal(collection.id);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget) return;
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        openCollectionModal(collection.id);
+                      }
+                    }}
+                    draggable={canReorderCollections && !mutating}
+                    onDragStart={(event) => handleCollectionCardDragStart(event, collection.id)}
+                    onDragOver={(event) => handleCollectionCardDragOver(event, collection.id)}
+                    onDrop={(event) => handleCollectionCardDrop(event, collection.id)}
+                    onDragEnd={handleCollectionCardDragEnd}
+                    className={cardClassName}
+                  >
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        toggleCollectionFavorite(collection.id);
+                      }}
+                      draggable={false}
+                      onDragStart={(event) => event.preventDefault()}
+                      className={`collections-favorite-btn collections-favorite-btn-corner ${isFavorite ? 'active' : ''}`}
+                      aria-label={isFavorite ? (t.collectionsFavoriteRemove || 'Remove from favorites') : (t.collectionsFavoriteAdd || 'Add to favorites')}
+                      title={isFavorite ? (t.collectionsFavoriteRemove || 'Remove from favorites') : (t.collectionsFavoriteAdd || 'Add to favorites')}
+                    >
+                      <svg viewBox="0 0 24 24" className="collections-favorite-btn-icon" aria-hidden="true">
+                        <path d="M12 2.6 14.96 8.6 21.58 9.56 16.79 14.22 17.92 20.8 12 17.68 6.08 20.8 7.21 14.22 2.42 9.56 9.04 8.6Z" />
+                      </svg>
+                    </button>
+                    <div className="collections-large-card-head">
+                      <div className="collections-large-card-copy">
+                        <p className="collections-large-card-title">{title}</p>
+                        <p className={`collections-large-card-description ${description ? '' : 'opacity-45'}`}>
+                          {description || t.collectionsEmptyHint}
+                        </p>
+                      </div>
+                      <div className="collections-inline-preview" aria-hidden="true">
+                        {previewItems.length > 0 ? (
+                          <div className={`collections-preview-stack count-${Math.min(previewItems.length, COLLECTION_PREVIEW_COUNT)}`}>
+                            {previewItems.map((item, index) => (
+                              <div key={`${collection.id}-${item.key}-${index}`} className="collections-preview-poster">
+                                <LazyImg
+                                  src={item.posterPath ? `${IMG_500}${item.posterPath}` : '/poster-placeholder.svg'}
+                                  alt=""
+                                  className="collections-preview-poster-img"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="collections-preview-empty">
+                            <span className="collections-preview-empty-poster" />
+                            <span className="collections-preview-empty-poster" />
+                            <span className="collections-preview-empty-poster" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="collections-large-card-foot">
+                      <span className="text-xs opacity-55">{updatedAt}</span>
+                      <span className="collections-large-card-open">{t.details}</span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="empty-state compact">
+              <div className="empty-state-icon" aria-hidden="true">{'\u{1F50D}'}</div>
+              <p className="empty-state-title">{curatedEmptyTitle}</p>
+              <p className="empty-state-hint">{curatedEmptyHint}</p>
+            </div>
+          )}
+        </>
+      )}
+
+      {collectionsLoading && (
+        <div className="glass app-panel p-5">
+          <p className="text-sm opacity-80">{t.loading}</p>
+        </div>
+      )}
+
+      {!collectionsLoading && collections.length === 0 && (
+        <div className="empty-state">
+          <div className="empty-state-icon" aria-hidden="true">{'\u{1F4DA}'}</div>
+          <p className="empty-state-title">{t.collectionsNoCollectionsTitle}</p>
+          <p className="empty-state-hint">{t.collectionsNoCollectionsHint}</p>
         </div>
       )}
 

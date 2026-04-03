@@ -70,6 +70,7 @@ create table if not exists public.curated_collections (
   title_en text not null default '',
   description_ru text not null default '',
   description_en text not null default '',
+  sort_order integer not null default 1,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint curated_collections_has_title check (
