@@ -35,6 +35,7 @@ export const CustomSelect = React.memo(({
   ariaLabel,
   className = '',
   menuClassName = '',
+  menuPlacement = 'bottom',
 }) => {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
@@ -62,7 +63,11 @@ export const CustomSelect = React.memo(({
   const hasOptions = options.length > 0;
   const triggerLabel = selectedOption?.label || '';
   const wrapClassName = ['ctrl-select-wrap', open ? 'open' : '', className].filter(Boolean).join(' ');
-  const panelClassName = ['ctrl-select-menu', menuClassName].filter(Boolean).join(' ');
+  const panelClassName = [
+    'ctrl-select-menu',
+    menuPlacement === 'top' ? 'ctrl-select-menu-top' : '',
+    menuClassName,
+  ].filter(Boolean).join(' ');
 
   const selectOption = (nextValue) => {
     if (String(nextValue) !== String(value)) onChange(nextValue);

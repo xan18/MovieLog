@@ -42,6 +42,7 @@ const interpolate = (template, values = {}) => {
 const COLLECTION_PREVIEW_COUNT = 3;
 const COLLECTION_PREVIEW_MODE = 'latest'; // 'latest' | 'first'
 const getCollectionPreviewKey = (mediaType, tmdbId) => `${mediaType}-${Number(tmdbId)}`;
+const getCollectionItemLibraryKey = (mediaType, tmdbId) => `${mediaType}-${Number(tmdbId)}`;
 const toTimestamp = (value) => {
   const parsed = Date.parse(value || '');
   return Number.isFinite(parsed) ? parsed : 0;
@@ -148,6 +149,7 @@ export default function CollectionsView({
   const [itemsLoading, setItemsLoading] = useState(false);
   const [itemsError, setItemsError] = useState('');
   const [collectionPreviewMap, setCollectionPreviewMap] = useState({});
+  const [collectionItemRowsMap, setCollectionItemRowsMap] = useState({});
 
   const [createDraft, setCreateDraft] = useState(createEmptyDraft);
   const [editDraft, setEditDraft] = useState(createEmptyDraft);
@@ -317,6 +319,27 @@ export default function CollectionsView({
       return 0;
     });
   }, [collections, currentUserId, curatedVisibilityFilter, favoriteCollectionIds]);
+  const completedLibraryKeySet = useMemo(() => new Set(
+    (Array.isArray(library) ? library : [])
+      .filter((entry) => entry?.status === 'completed')
+      .map((entry) => getCollectionItemLibraryKey(entry?.mediaType, entry?.id))
+  ), [library]);
+  const collectionStatsMap = useMemo(() => {
+    const statsByCollectionId = {};
+    Object.entries(collectionItemRowsMap || {}).forEach(([collectionId, rows]) => {
+      const normalizedRows = Array.isArray(rows) ? rows : [];
+      const totalCount = normalizedRows.length;
+      const watchedCount = normalizedRows.reduce((count, row) => {
+        const rowKey = getCollectionItemLibraryKey(row?.media_type, row?.tmdb_id);
+        return count + (completedLibraryKeySet.has(rowKey) ? 1 : 0);
+      }, 0);
+      statsByCollectionId[collectionId] = {
+        totalCount,
+        watchedCount,
+      };
+    });
+    return statsByCollectionId;
+  }, [collectionItemRowsMap, completedLibraryKeySet]);
   const canReorderCollections = useMemo(() => (
     Boolean(
       isAuthor
@@ -492,12 +515,14 @@ export default function CollectionsView({
     const loadCollectionPreviews = async () => {
       if (!supabase || collections.length === 0) {
         setCollectionPreviewMap({});
+        setCollectionItemRowsMap({});
         return;
       }
 
       const collectionIds = collections.map((collection) => collection.id).filter(Boolean);
       if (collectionIds.length === 0) {
         setCollectionPreviewMap({});
+        setCollectionItemRowsMap({});
         return;
       }
 
@@ -513,6 +538,7 @@ export default function CollectionsView({
       if (error) {
         console.warn('Failed to load collection preview rows', error);
         setCollectionPreviewMap({});
+        setCollectionItemRowsMap({});
         return;
       }
 
@@ -523,6 +549,7 @@ export default function CollectionsView({
       });
 
       const previewRowsByCollection = new Map();
+      const allRowsByCollection = new Map();
       const neededKeys = new Set();
 
       groupedRows.forEach((rows, collectionId) => {
@@ -530,6 +557,7 @@ export default function CollectionsView({
           ((Number(a.sort_order) || 0) - (Number(b.sort_order) || 0))
           || (toTimestamp(a.created_at) - toTimestamp(b.created_at))
         ));
+        allRowsByCollection.set(collectionId, orderedRows);
         const previewRows = COLLECTION_PREVIEW_MODE === 'first'
           ? orderedRows.slice(0, COLLECTION_PREVIEW_COUNT)
           : orderedRows.slice(-COLLECTION_PREVIEW_COUNT);
@@ -573,8 +601,10 @@ export default function CollectionsView({
       if (cancelled) return;
 
       const nextPreviewMap = {};
+      const nextCollectionRowsMap = {};
       collectionIds.forEach((collectionId) => {
         const previewRows = previewRowsByCollection.get(collectionId) || [];
+        nextCollectionRowsMap[collectionId] = allRowsByCollection.get(collectionId) || [];
         nextPreviewMap[collectionId] = previewRows.map((row) => {
           const key = getCollectionPreviewKey(row.media_type, row.tmdb_id);
           const cached = previewCache.get(key);
@@ -589,6 +619,7 @@ export default function CollectionsView({
       });
 
       setCollectionPreviewMap(nextPreviewMap);
+      setCollectionItemRowsMap(nextCollectionRowsMap);
     };
 
     loadCollectionPreviews();
@@ -1340,6 +1371,7 @@ export default function CollectionsView({
                 options={visibilityOptions}
                 onChange={(value) => setCreateDraft((prev) => ({ ...prev, visibility: value }))}
                 ariaLabel={t.collectionsVisibilityLabel}
+                menuPlacement="top"
               />
             </div>
             <button
@@ -1385,6 +1417,7 @@ export default function CollectionsView({
                 const title = getLocalized(lang, collection.title_ru, collection.title_en) || t.collectionsUntitled;
                 const description = getLocalized(lang, collection.description_ru, collection.description_en);
                 const previewItems = (collectionPreviewMap[collection.id] || []).slice(0, COLLECTION_PREVIEW_COUNT);
+                const collectionStats = collectionStatsMap[collection.id] || { totalCount: 0, watchedCount: 0 };
                 const updatedAt = collection.updated_at
                   ? new Date(collection.updated_at).toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'en-US')
                   : '';
@@ -1473,7 +1506,12 @@ export default function CollectionsView({
                       </div>
                     </div>
                     <div className="collections-large-card-foot">
-                      <span className="text-xs opacity-55">{updatedAt}</span>
+                      <div className="collections-large-card-meta">
+                        <span className="text-xs opacity-55">{updatedAt}</span>
+                        <span className="collections-large-card-progress">
+                          {collectionStats.watchedCount}/{collectionStats.totalCount}
+                        </span>
+                      </div>
                       <span className="collections-large-card-open">{t.details}</span>
                     </div>
                   </article>
@@ -1558,7 +1596,7 @@ export default function CollectionsView({
             </div>
 
       {canManageSelected && (
-        <div className="glass app-panel overflow-visible p-5 space-y-4">
+        <div className="glass app-panel overflow-visible collections-modal-editor-panel p-5 space-y-4">
           <p className="text-sm font-black">{t.collectionsEditTitle}</p>
           <form className="grid grid-cols-1 md:grid-cols-2 gap-3" onSubmit={handleUpdateCollection}>
             <input
@@ -1591,6 +1629,7 @@ export default function CollectionsView({
                 options={visibilityOptions}
                 onChange={(value) => setEditDraft((prev) => ({ ...prev, visibility: value }))}
                 ariaLabel={t.collectionsVisibilityLabel}
+                menuPlacement="top"
               />
             </div>
             <div className="md:col-span-1 flex gap-3">
@@ -1615,7 +1654,7 @@ export default function CollectionsView({
       )}
 
       {canManageSelected && (
-        <div className="glass app-panel overflow-visible p-5 space-y-4">
+        <div className="glass app-panel overflow-visible collections-modal-items-panel p-5 space-y-4">
           <p className="text-sm font-black">{t.collectionsManageItemsTitle}</p>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div className="md:col-span-1">
@@ -1776,6 +1815,7 @@ export default function CollectionsView({
               <p className="text-sm font-black mb-2">{t.collectionsOrderTitle}</p>
               {collectionItems.map((item, index) => {
                 const itemId = String(item._collectionItemId);
+                const itemYear = getYear(item);
                 const isDragging = draggingCollectionItemId === itemId;
                 const isDragTarget = !isDragging && draggingCollectionItemId && dragOverCollectionItemId === itemId;
                 return (
@@ -1803,7 +1843,7 @@ export default function CollectionsView({
                         <span />
                       </span>
                       <p className="text-sm font-semibold truncate">
-                        {index + 1}. {item.title || item.name}
+                        {index + 1}. {item.title || item.name}{itemYear ? ` (${itemYear})` : ''}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
