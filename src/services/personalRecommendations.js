@@ -247,58 +247,108 @@ export const buildPersonalRecommendationsCacheKey = ({
   return `${CACHE_PREFIX}:${normalizedUserId}:${normalizedLanguage}:min${normalizedMinSeedRating}:${hash}`;
 };
 
+const getRecommendationCacheStorages = () => {
+  if (typeof window === 'undefined') return [];
+  const storages = [];
+  if (window.sessionStorage) storages.push(window.sessionStorage);
+  if (window.localStorage) storages.push(window.localStorage);
+  return storages;
+};
+
+const parseRecommendationCachePayload = (rawValue) => {
+  if (!rawValue) return null;
+  const parsed = JSON.parse(rawValue);
+  const timestamp = Number(parsed?.timestamp) || 0;
+  const recommendations = Array.isArray(parsed?.recommendations) ? parsed.recommendations : null;
+  if (!timestamp || !recommendations) return null;
+  return {
+    timestamp,
+    recommendations,
+  };
+};
+
 export const readPersonalRecommendationsCache = (cacheKey, ttlMs = PERSONAL_RECOMMENDATIONS_CACHE_TTL_MS) => {
-  if (typeof window === 'undefined' || !window.sessionStorage || !cacheKey) return null;
+  if (!cacheKey) return null;
 
-  try {
-    const rawValue = window.sessionStorage.getItem(cacheKey);
-    if (!rawValue) return null;
+  const storages = getRecommendationCacheStorages();
+  if (storages.length === 0) return null;
 
-    const parsed = JSON.parse(rawValue);
-    const timestamp = Number(parsed?.timestamp) || 0;
-    const recommendations = Array.isArray(parsed?.recommendations) ? parsed.recommendations : null;
-    if (!timestamp || !recommendations) {
-      window.sessionStorage.removeItem(cacheKey);
-      return null;
-    }
-
-    if (Date.now() - timestamp > ttlMs) {
-      window.sessionStorage.removeItem(cacheKey);
-      return null;
-    }
-
-    return recommendations;
-  } catch {
+  for (let index = 0; index < storages.length; index += 1) {
+    const storage = storages[index];
     try {
-      window.sessionStorage.removeItem(cacheKey);
+      const rawValue = storage.getItem(cacheKey);
+      if (!rawValue) continue;
+
+      const parsed = parseRecommendationCachePayload(rawValue);
+      if (!parsed) {
+        storage.removeItem(cacheKey);
+        continue;
+      }
+
+      if (Date.now() - parsed.timestamp > ttlMs) {
+        storages.forEach((store) => {
+          try {
+            store.removeItem(cacheKey);
+          } catch {
+            // ignore
+          }
+        });
+        return null;
+      }
+
+      if (index > 0) {
+        try {
+          storages[0].setItem(cacheKey, rawValue);
+        } catch {
+          // ignore session storage warmup failures
+        }
+      }
+
+      return parsed.recommendations;
     } catch {
-      // ignore
+      try {
+        storage.removeItem(cacheKey);
+      } catch {
+        // ignore
+      }
     }
-    return null;
   }
+
+  return null;
 };
 
 export const writePersonalRecommendationsCache = (cacheKey, recommendations) => {
-  if (typeof window === 'undefined' || !window.sessionStorage || !cacheKey) return;
+  if (!cacheKey) return;
   if (!Array.isArray(recommendations)) return;
 
-  try {
-    window.sessionStorage.setItem(cacheKey, JSON.stringify({
-      timestamp: Date.now(),
-      recommendations,
-    }));
-  } catch {
-    // ignore cache write failures
-  }
+  const storages = getRecommendationCacheStorages();
+  if (storages.length === 0) return;
+
+  const serialized = JSON.stringify({
+    timestamp: Date.now(),
+    recommendations,
+  });
+
+  storages.forEach((storage) => {
+    try {
+      storage.setItem(cacheKey, serialized);
+    } catch {
+      // ignore cache write failures
+    }
+  });
 };
 
 export const clearPersonalRecommendationsCache = (cacheKey) => {
-  if (typeof window === 'undefined' || !window.sessionStorage || !cacheKey) return;
-  try {
-    window.sessionStorage.removeItem(cacheKey);
-  } catch {
-    // ignore cache clear failures
-  }
+  if (!cacheKey) return;
+  const storages = getRecommendationCacheStorages();
+  if (storages.length === 0) return;
+  storages.forEach((storage) => {
+    try {
+      storage.removeItem(cacheKey);
+    } catch {
+      // ignore cache clear failures
+    }
+  });
 };
 
 export const mapWithConcurrency = async (items, concurrency, mapper) => {

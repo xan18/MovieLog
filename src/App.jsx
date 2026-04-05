@@ -37,6 +37,7 @@ import PersonModal from './components/modals/PersonModal.jsx';
 const APP_TABS = ['catalog', 'collections', 'library', 'stats', 'settings'];
 const APP_TAB_SET = new Set(APP_TABS);
 const DEFAULT_APP_TAB = 'catalog';
+const EMPTY_LIBRARY = [];
 
 function isAppTab(tabId) {
   return APP_TAB_SET.has(tabId);
@@ -121,7 +122,9 @@ export default function App() {
   const CREW_ROLE_MAP = useMemo(() => getCrewRoleMap(t), [t]);
 
   const [library, setLibrary] = useDebouncedStorageState(STORAGE_KEY, [], {
-    debounceMs: 500,
+    debounceMs: 2000,
+    hydrateOnInit: false,
+    serialize: (value) => JSON.stringify(sanitizeLibraryData(value)),
     normalize: sanitizeLibraryData,
   });
   const [globalError, setGlobalError] = useState('');
@@ -272,7 +275,7 @@ export default function App() {
     enabled: isSupabaseConfigured && Boolean(supabase),
   });
 
-  const isAuthor = canAuthorMode && authorModeEnabled;
+  const isAuthor = rolesReady && canAuthorMode && authorModeEnabled;
 
   const onApiError = useCallback((message) => {
     setGlobalError(message || t.networkError);
@@ -703,29 +706,27 @@ export default function App() {
     return (bValue - aValue) || compareByDateModified(a, b);
   };
 
-  const shownMovies = useMemo(() => {
-    let arr = library.filter(x => x.mediaType === 'movie' && (shelf === 'all' || x.status === shelf));
-    if (sortBy === 'imdbRating') arr.sort(compareByImdbRating);
-    else if (sortBy === 'myRating') arr.sort(compareByMyRating);
-    else if (sortBy === 'releaseYear') arr.sort(compareByReleaseYear);
-    else arr.sort(compareByDateModified);
-    return arr;
-  }, [library, shelf, sortBy]);
+  const shown = useMemo(() => {
+    if (activeTab !== 'library') return EMPTY_LIBRARY;
 
-  const shownTv = useMemo(() => {
-    let arr = library.filter(x => x.mediaType === 'tv' && (shelf === 'all' || x.status === shelf));
-    if (sortBy === 'imdbRating') arr.sort(compareByImdbRating);
-    else if (sortBy === 'myRating') arr.sort(compareByMyRating);
-    else if (sortBy === 'releaseYear') arr.sort(compareByReleaseYear);
-    else if (sortBy === 'remainingEpisodes') arr.sort(compareByRemainingEpisodes);
-    else arr.sort(compareByDateModified);
-    return arr;
-  }, [library, shelf, sortBy]);
+    const filtered = library.filter((entry) => (
+      entry.mediaType === libraryType
+      && (shelf === 'all' || entry.status === shelf)
+    ));
+    if (filtered.length <= 1) return filtered;
 
-  const shown = libraryType === 'movie' ? shownMovies : shownTv;
+    const sorted = [...filtered];
+    if (sortBy === 'imdbRating') sorted.sort(compareByImdbRating);
+    else if (sortBy === 'myRating') sorted.sort(compareByMyRating);
+    else if (sortBy === 'releaseYear') sorted.sort(compareByReleaseYear);
+    else if (sortBy === 'remainingEpisodes' && libraryType === 'tv') sorted.sort(compareByRemainingEpisodes);
+    else sorted.sort(compareByDateModified);
+    return sorted;
+  }, [activeTab, library, libraryType, shelf, sortBy]);
 
   /* Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Stats Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ */
-  const { movieStats, tvStats, peopleData } = useStatsSelectors({ library, peopleView });
+  const statsLibrary = activeTab === 'stats' ? library : EMPTY_LIBRARY;
+  const { movieStats, tvStats, peopleData } = useStatsSelectors({ library: statsLibrary, peopleView });
 
   if (!isSupabaseConfigured || !supabase) {
     return (
@@ -764,16 +765,6 @@ export default function App() {
         error={authError}
         notice={authNotice}
       />
-    );
-  }
-
-  if (!rolesReady) {
-    return (
-      <div className="app-shell max-w-[740px] mx-auto px-4 md:px-6 pt-10 pb-12 relative">
-        <div className="glass app-panel p-7 md:p-9">
-          <p className="text-sm opacity-80">{t.loading}</p>
-        </div>
-      </div>
     );
   }
 
@@ -1207,3 +1198,4 @@ export default function App() {
     </div>
   );
 }
+

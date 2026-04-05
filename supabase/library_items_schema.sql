@@ -20,8 +20,22 @@ create index if not exists library_items_user_idx
 create index if not exists library_items_user_media_idx
   on public.library_items (user_id, media_type);
 
+create index if not exists library_items_user_id_id_idx
+  on public.library_items (user_id, id);
+
 create index if not exists library_items_user_updated_at_idx
   on public.library_items (user_id, updated_at desc);
+
+create or replace function public.get_library_payloads()
+returns table (payload jsonb)
+language sql
+security invoker
+as $$
+  select li.payload
+  from public.library_items li
+  where li.user_id = auth.uid()
+  order by li.id asc;
+$$;
 
 create or replace function public.set_library_items_updated_at()
 returns trigger
@@ -69,3 +83,5 @@ using (user_id = auth.uid());
 
 grant select, insert, update, delete on public.library_items to authenticated;
 grant select, insert, update, delete on public.library_items to service_role;
+grant execute on function public.get_library_payloads() to authenticated;
+grant execute on function public.get_library_payloads() to service_role;

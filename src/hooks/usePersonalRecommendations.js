@@ -19,7 +19,9 @@ import {
 } from '../services/personalRecommendations.js';
 
 const REQUEST_CONCURRENCY = 3;
-const MAX_PAGES_PER_SEED = 3;
+const MAX_PAGES_PER_SEED = 2;
+const MAX_SEEDS_TO_QUERY = 24;
+const RECOMMENDATION_REQUEST_TIMEOUT_MS = 12000;
 const RECOMMENDATION_MEDIA_TYPE_FILTERS = new Set(['all', 'movie', 'tv']);
 
 const countDisplayableRecommendations = ({
@@ -34,6 +36,45 @@ const countDisplayableRecommendations = ({
     return count + 1;
   }, 0)
 );
+
+const fetchRecommendationPage = async ({
+  seed,
+  page,
+  language,
+  fallbackTotalPages = 1,
+}) => {
+  const requestController = typeof AbortController === 'function'
+    ? new AbortController()
+    : null;
+  const timeoutId = requestController
+    ? setTimeout(() => requestController.abort(), RECOMMENDATION_REQUEST_TIMEOUT_MS)
+    : null;
+
+  try {
+    const payload = await tmdbFetchJson(
+      `/${seed.mediaType}/${seed.id}/recommendations`,
+      { language, page },
+      requestController ? { signal: requestController.signal } : {}
+    );
+
+    return {
+      results: Array.isArray(payload?.results) ? payload.results : [],
+      totalPages: Math.max(1, Number(payload?.total_pages) || fallbackTotalPages || 1),
+      failed: false,
+    };
+  } catch (error) {
+    if (error?.name !== 'AbortError') {
+      console.warn(`Failed to load recommendation page ${page} for ${seed.mediaType}:${seed.id}`, error);
+    }
+    return {
+      results: [],
+      totalPages: Math.max(1, Number(fallbackTotalPages) || 1),
+      failed: true,
+    };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+};
 
 export function usePersonalRecommendations({
   library,
@@ -68,6 +109,10 @@ export function usePersonalRecommendations({
     [library, normalizedMinSeedRating]
   );
   const seedCount = seeds.length;
+  const seedsForRequests = useMemo(
+    () => seeds.slice(0, MAX_SEEDS_TO_QUERY),
+    [seeds]
+  );
   const libraryFingerprint = useMemo(() => buildLibraryFingerprint(library), [library]);
 
   const cacheKey = useMemo(() => buildPersonalRecommendationsCacheKey({
@@ -120,33 +165,44 @@ export function usePersonalRecommendations({
     });
 
     const cached = readPersonalRecommendationsCache(cacheKey, cacheTtlMs);
-    if (cached && countDisplayable(cached) >= minimumVisibleRecommendations) {
-      setError('');
-      setLoading(false);
+    if (cached) {
       setRecommendations(cached);
-      return () => {
-        cancelled = true;
-      };
+      if (countDisplayable(cached) >= minimumVisibleRecommendations) {
+        setError('');
+        setLoading(false);
+        return () => {
+          cancelled = true;
+        };
+      }
     }
 
     const loadRecommendations = async () => {
       setError('');
       setLoading(true);
       try {
+        if (seedsForRequests.length === 0) {
+          if (cached) return;
+          setRecommendations([]);
+          return;
+        }
+
         const seedGroups = await mapWithConcurrency(
-          seeds,
+          seedsForRequests,
           REQUEST_CONCURRENCY,
           async (seed) => {
-            const payload = await tmdbFetchJson(`/${seed.mediaType}/${seed.id}/recommendations`, {
-              language: tmdbLanguage,
+            const pageData = await fetchRecommendationPage({
+              seed,
               page: 1,
+              language: tmdbLanguage,
+              fallbackTotalPages: 1,
             });
 
             return {
               seed,
-              results: Array.isArray(payload?.results) ? payload.results : [],
-              totalPages: Math.max(1, Number(payload?.total_pages) || 1),
+              results: pageData.results,
+              totalPages: pageData.totalPages,
               nextPage: 2,
+              failedPages: pageData.failed ? 1 : 0,
             };
           }
         );
@@ -174,15 +230,18 @@ export function usePersonalRecommendations({
             expandableGroups,
             REQUEST_CONCURRENCY,
             async (group) => {
-              const payload = await tmdbFetchJson(`/${group.seed.mediaType}/${group.seed.id}/recommendations`, {
-                language: tmdbLanguage,
+              const pageData = await fetchRecommendationPage({
+                seed: group.seed,
                 page: group.nextPage,
+                language: tmdbLanguage,
+                fallbackTotalPages: group.totalPages,
               });
 
               return {
                 group,
-                results: Array.isArray(payload?.results) ? payload.results : [],
-                totalPages: Math.max(1, Number(payload?.total_pages) || group.totalPages || 1),
+                results: pageData.results,
+                totalPages: pageData.totalPages,
+                failed: pageData.failed,
               };
             }
           );
@@ -191,6 +250,9 @@ export function usePersonalRecommendations({
             if (!batch?.group) return;
             batch.group.totalPages = batch.totalPages;
             batch.group.nextPage += 1;
+            if (batch.failed) {
+              batch.group.failedPages = Number(batch.group.failedPages || 0) + 1;
+            }
             if (Array.isArray(batch.results) && batch.results.length > 0) {
               batch.group.results = [...batch.group.results, ...batch.results];
             }
@@ -228,9 +290,8 @@ export function usePersonalRecommendations({
     pageSize,
     refreshToken,
     seedCount,
-    seeds,
+    seedsForRequests,
     tmdbLanguage,
-    visibleCount,
   ]);
 
   const filteredRecommendations = useMemo(

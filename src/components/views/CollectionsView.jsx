@@ -4,6 +4,7 @@ import { CustomSelect, LazyImg, SegmentedControl } from '../ui.jsx';
 import { IMG_500 } from '../../constants/appConstants.js';
 import { getYear } from '../../utils/appUtils.js';
 import { tmdbFetchJson } from '../../services/tmdb.js';
+import { mapWithConcurrency } from '../../services/personalRecommendations.js';
 import { supabase } from '../../services/supabase.js';
 import { useDebounce } from '../../hooks/useDebounce.js';
 import { useQuickActionGesture } from '../../hooks/useQuickActionGesture.js';
@@ -41,6 +42,8 @@ const interpolate = (template, values = {}) => {
 
 const COLLECTION_PREVIEW_COUNT = 3;
 const COLLECTION_PREVIEW_MODE = 'latest'; // 'latest' | 'first'
+const COLLECTION_PREVIEW_FETCH_CONCURRENCY = 6;
+const COLLECTION_DETAILS_FETCH_CONCURRENCY = 4;
 const getCollectionPreviewKey = (mediaType, tmdbId) => `${mediaType}-${Number(tmdbId)}`;
 const getCollectionItemLibraryKey = (mediaType, tmdbId) => `${mediaType}-${Number(tmdbId)}`;
 const toTimestamp = (value) => {
@@ -174,6 +177,7 @@ export default function CollectionsView({
   const collectionModalCloseTimerRef = useRef(null);
   const collectionSearchInputRef = useRef(null);
   const collectionPreviewCacheRef = useRef(new Map());
+  const collectionItemsRequestRef = useRef(0);
   const suppressCollectionCardClickRef = useRef(false);
 
   const TMDB_LANG = lang === 'ru' ? 'ru-RU' : 'en-US';
@@ -426,6 +430,9 @@ export default function CollectionsView({
   }, [currentUserId]);
 
   const loadCollectionItems = useCallback(async (collectionId) => {
+    const requestId = collectionItemsRequestRef.current + 1;
+    collectionItemsRequestRef.current = requestId;
+
     if (!collectionId) {
       setCollectionRows([]);
       setCollectionItems([]);
@@ -441,6 +448,7 @@ export default function CollectionsView({
       .eq('collection_id', collectionId)
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true });
+    if (requestId !== collectionItemsRequestRef.current) return;
 
     if (error) {
       setCollectionRows([]);
@@ -453,39 +461,45 @@ export default function CollectionsView({
     const rows = data || [];
     setCollectionRows(rows);
 
-    const detailedItems = await Promise.all(rows.map(async (row) => {
-      try {
-        const detail = await tmdbFetchJson(`/${row.media_type}/${row.tmdb_id}`, { language: TMDB_LANG });
-        if (!detail?.id) throw new Error('Invalid TMDB payload');
-        return {
-          ...detail,
-          mediaType: row.media_type,
-          _collectionItemId: row.id,
-          _sortOrder: row.sort_order || 0,
-        };
-      } catch (error) {
-        console.warn(`Failed to load collection item details for ${row.media_type}:${row.tmdb_id}`, error);
-        return {
-          id: Number(row.tmdb_id),
-          mediaType: row.media_type,
-          title: `TMDB #${row.tmdb_id}`,
-          name: `TMDB #${row.tmdb_id}`,
-          overview: '',
-          poster_path: null,
-          vote_average: 0,
-          _collectionItemId: row.id,
-          _sortOrder: row.sort_order || 0,
-        };
+    const detailedItems = await mapWithConcurrency(
+      rows,
+      COLLECTION_DETAILS_FETCH_CONCURRENCY,
+      async (row) => {
+        try {
+          const detail = await tmdbFetchJson(`/${row.media_type}/${row.tmdb_id}`, { language: TMDB_LANG });
+          if (!detail?.id) throw new Error('Invalid TMDB payload');
+          return {
+            ...detail,
+            mediaType: row.media_type,
+            _collectionItemId: row.id,
+            _sortOrder: row.sort_order || 0,
+          };
+        } catch (error) {
+          console.warn(`Failed to load collection item details for ${row.media_type}:${row.tmdb_id}`, error);
+          return {
+            id: Number(row.tmdb_id),
+            mediaType: row.media_type,
+            title: `TMDB #${row.tmdb_id}`,
+            name: `TMDB #${row.tmdb_id}`,
+            overview: '',
+            poster_path: null,
+            vote_average: 0,
+            _collectionItemId: row.id,
+            _sortOrder: row.sort_order || 0,
+          };
+        }
       }
-    }));
+    );
+    if (requestId !== collectionItemsRequestRef.current) return;
 
     setCollectionItems(detailedItems);
     setItemsLoading(false);
   }, [TMDB_LANG]);
 
   useEffect(() => {
+    if (collectionsSection !== 'curated') return;
     loadCollections();
-  }, [loadCollections]);
+  }, [collectionsSection, loadCollections]);
 
   useEffect(() => {
     const storageKey = buildCollectionFavoritesStorageKey(currentUserId);
@@ -513,7 +527,7 @@ export default function CollectionsView({
     let cancelled = false;
 
     const loadCollectionPreviews = async () => {
-      if (!supabase || collections.length === 0) {
+      if (collectionsSection !== 'curated' || !supabase || collections.length === 0) {
         setCollectionPreviewMap({});
         setCollectionItemRowsMap({});
         return;
@@ -574,28 +588,32 @@ export default function CollectionsView({
       const missingKeys = Array.from(neededKeys).filter((key) => !previewCache.has(key));
 
       if (missingKeys.length > 0) {
-        await Promise.all(missingKeys.map(async (previewKey) => {
-          const [mediaType, tmdbIdRaw] = String(previewKey).split('-');
-          const tmdbId = Number(tmdbIdRaw);
-          if (!mediaType || !Number.isFinite(tmdbId) || tmdbId <= 0) {
-            previewCache.set(previewKey, null);
-            return;
-          }
+        await mapWithConcurrency(
+          missingKeys,
+          COLLECTION_PREVIEW_FETCH_CONCURRENCY,
+          async (previewKey) => {
+            const [mediaType, tmdbIdRaw] = String(previewKey).split('-');
+            const tmdbId = Number(tmdbIdRaw);
+            if (!mediaType || !Number.isFinite(tmdbId) || tmdbId <= 0) {
+              previewCache.set(previewKey, null);
+              return;
+            }
 
-          try {
-            const detail = await tmdbFetchJson(`/${mediaType}/${tmdbId}`, { language: TMDB_LANG });
-            previewCache.set(previewKey, {
-              posterPath: detail?.poster_path || null,
-              title: detail?.title || detail?.name || `TMDB #${tmdbId}`,
-            });
-          } catch (previewError) {
-            console.warn(`Failed to load collection preview for ${previewKey}`, previewError);
-            previewCache.set(previewKey, {
-              posterPath: null,
-              title: `TMDB #${tmdbId}`,
-            });
+            try {
+              const detail = await tmdbFetchJson(`/${mediaType}/${tmdbId}`, { language: TMDB_LANG });
+              previewCache.set(previewKey, {
+                posterPath: detail?.poster_path || null,
+                title: detail?.title || detail?.name || `TMDB #${tmdbId}`,
+              });
+            } catch (previewError) {
+              console.warn(`Failed to load collection preview for ${previewKey}`, previewError);
+              previewCache.set(previewKey, {
+                posterPath: null,
+                title: `TMDB #${tmdbId}`,
+              });
+            }
           }
-        }));
+        );
       }
 
       if (cancelled) return;
@@ -627,7 +645,7 @@ export default function CollectionsView({
     return () => {
       cancelled = true;
     };
-  }, [collections, TMDB_LANG]);
+  }, [collections, collectionsSection, TMDB_LANG]);
 
   useEffect(() => {
     if (!collections.length) {
@@ -671,8 +689,17 @@ export default function CollectionsView({
   }, [selectedCollectionId, selectedCollection]);
 
   useEffect(() => {
+    if (collectionsSection !== 'curated' || !isCollectionModalOpen || !selectedCollectionId) {
+      collectionItemsRequestRef.current += 1;
+      setCollectionRows([]);
+      setCollectionItems([]);
+      setItemsLoading(false);
+      setItemsError('');
+      return;
+    }
+
     loadCollectionItems(selectedCollectionId);
-  }, [selectedCollectionId, loadCollectionItems]);
+  }, [collectionsSection, isCollectionModalOpen, selectedCollectionId, loadCollectionItems]);
 
   const resetOrderDragState = useCallback(() => {
     setDraggingCollectionItemId('');

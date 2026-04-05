@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { isReleasedItem } from '../utils/releaseUtils.js';
 import { uniqSort } from '../utils/appUtils.js';
 import {
@@ -12,7 +12,17 @@ const applyModificationTimestamp = (entry, changedAt) => ({
   dateModified: changedAt,
 });
 
+const toLibraryEntryKey = (mediaType, id) => `${mediaType}:${Number(id)}`;
+
 export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemRef }) {
+  const libraryEntryMap = useMemo(() => {
+    const map = new Map();
+    library.forEach((entry) => {
+      if (!entry?.mediaType || !entry?.id) return;
+      map.set(toLibraryEntryKey(entry.mediaType, entry.id), entry);
+    });
+    return map;
+  }, [library]);
 
   const getTvContextItem = useCallback((tvId, explicitContext = null) => {
     if (explicitContext?.mediaType === 'tv' && explicitContext.id === tvId) return explicitContext;
@@ -21,12 +31,12 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
     return null;
   }, [selectedItemRef]);
 
-  const getLibraryEntry = useCallback((mType, itemId) =>
-    library.find(x => x.mediaType === mType && x.id === itemId),
-  [library]);
+  const getLibraryEntry = useCallback((mType, itemId) => (
+    libraryEntryMap.get(toLibraryEntryKey(mType, itemId))
+  ), [libraryEntryMap]);
 
   const ensureInLibrary = useCallback((item, status) => {
-    const existing = library.find(x => x.mediaType === item.mediaType && x.id === item.id);
+    const existing = getLibraryEntry(item.mediaType, item.id);
     if (existing) return existing;
     const changedAt = Date.now();
     const newEntry = {
@@ -35,7 +45,7 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
     };
     setLibrary(prev => [...prev, newEntry]);
     return newEntry;
-  }, [library, setLibrary]);
+  }, [getLibraryEntry, setLibrary]);
 
   const addToLibrary = useCallback((item, status, ratingVal = 0, closeDetails = true) => {
     if (item.mediaType === 'movie' && status === 'completed' && !isReleasedItem(item)) return;
@@ -250,7 +260,7 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
   }, [setLibrary]);
 
   const handleEpisodeClick = useCallback((tvId, seasonNum, epNum) => {
-    const libEntry = library.find(x => x.mediaType === 'tv' && x.id === tvId);
+    const libEntry = getLibraryEntry('tv', tvId);
     if (libEntry) {
       toggleEpisodeWatched(tvId, seasonNum, epNum);
     } else {
@@ -271,10 +281,10 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
         return [...prev, newEntry];
       });
     }
-  }, [library, toggleEpisodeWatched, setLibrary, selectedItemRef]);
+  }, [getLibraryEntry, toggleEpisodeWatched, setLibrary, selectedItemRef]);
 
   const handleSeasonToggle = useCallback((tvId, seasonNum, episodeCount, airedEps) => {
-    const libEntry = library.find(x => x.mediaType === 'tv' && x.id === tvId);
+    const libEntry = getLibraryEntry('tv', tvId);
     if (libEntry) {
       toggleSeasonWatched(tvId, seasonNum, episodeCount, airedEps);
     } else {
@@ -295,7 +305,7 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
         return [...prev, newEntry];
       });
     }
-  }, [library, toggleSeasonWatched, setLibrary, selectedItemRef]);
+  }, [getLibraryEntry, toggleSeasonWatched, setLibrary, selectedItemRef]);
 
   return {
     getLibraryEntry,
