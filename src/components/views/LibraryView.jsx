@@ -434,8 +434,20 @@ export default function LibraryView({
             </button>
           )}
           <div className="app-switch-wrap">
-            <button onClick={() => setLibraryType('movie')} className={`app-switch-btn ${libraryType === 'movie' ? 'active' : ''}`}>{t.movies}</button>
-            <button onClick={() => setLibraryType('tv')} className={`app-switch-btn ${libraryType === 'tv' ? 'active' : ''}`}>{t.tvShows}</button>
+            <button
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => setLibraryType('movie')}
+              className={`app-switch-btn ${libraryType === 'movie' ? 'active' : ''}`}
+            >
+              {t.movies}
+            </button>
+            <button
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => setLibraryType('tv')}
+              className={`app-switch-btn ${libraryType === 'tv' ? 'active' : ''}`}
+            >
+              {t.tvShows}
+            </button>
           </div>
         </div>
       </div>

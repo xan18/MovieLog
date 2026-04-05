@@ -19,7 +19,21 @@ import {
 } from '../services/personalRecommendations.js';
 
 const REQUEST_CONCURRENCY = 3;
+const MAX_PAGES_PER_SEED = 3;
 const RECOMMENDATION_MEDIA_TYPE_FILTERS = new Set(['all', 'movie', 'tv']);
+
+const countDisplayableRecommendations = ({
+  recommendations,
+  mediaTypeFilter,
+  hiddenRecommendationKeySet,
+}) => (
+  (Array.isArray(recommendations) ? recommendations : []).reduce((count, item) => {
+    if (mediaTypeFilter !== 'all' && item?.mediaType !== mediaTypeFilter) return count;
+    const key = getPersonalRecommendationKey(item?.mediaType, item?.id);
+    if (key && hiddenRecommendationKeySet.has(key)) return count;
+    return count + 1;
+  }, 0)
+);
 
 export function usePersonalRecommendations({
   library,
@@ -70,6 +84,10 @@ export function usePersonalRecommendations({
     ),
     [hiddenRecommendationKeys]
   );
+  const minimumVisibleRecommendations = Math.min(
+    maxResults,
+    Math.max(visibleCount, pageSize)
+  );
 
   useEffect(() => {
     setVisibleCount((prev) => (prev < pageSize ? pageSize : prev));
@@ -95,8 +113,14 @@ export function usePersonalRecommendations({
       };
     }
 
+    const countDisplayable = (items) => countDisplayableRecommendations({
+      recommendations: items,
+      mediaTypeFilter: normalizedMediaTypeFilter,
+      hiddenRecommendationKeySet,
+    });
+
     const cached = readPersonalRecommendationsCache(cacheKey, cacheTtlMs);
-    if (cached) {
+    if (cached && countDisplayable(cached) >= minimumVisibleRecommendations) {
       setError('');
       setLoading(false);
       setRecommendations(cached);
@@ -121,16 +145,60 @@ export function usePersonalRecommendations({
             return {
               seed,
               results: Array.isArray(payload?.results) ? payload.results : [],
+              totalPages: Math.max(1, Number(payload?.total_pages) || 1),
+              nextPage: 2,
             };
           }
         );
 
         if (cancelled) return;
-        const rankedRecommendations = buildPersonalRecommendations({
+        const rankRecommendations = () => buildPersonalRecommendations({
           library,
-          seedGroups,
+          seedGroups: seedGroups.map((group) => ({
+            seed: group.seed,
+            results: group.results,
+          })),
           maxResults,
         });
+
+        let rankedRecommendations = rankRecommendations();
+
+        while (!cancelled && countDisplayable(rankedRecommendations) < minimumVisibleRecommendations) {
+          const expandableGroups = seedGroups.filter((group) => (
+            group.nextPage <= group.totalPages
+            && group.nextPage <= MAX_PAGES_PER_SEED
+          ));
+          if (expandableGroups.length === 0) break;
+
+          const nextPageBatches = await mapWithConcurrency(
+            expandableGroups,
+            REQUEST_CONCURRENCY,
+            async (group) => {
+              const payload = await tmdbFetchJson(`/${group.seed.mediaType}/${group.seed.id}/recommendations`, {
+                language: tmdbLanguage,
+                page: group.nextPage,
+              });
+
+              return {
+                group,
+                results: Array.isArray(payload?.results) ? payload.results : [],
+                totalPages: Math.max(1, Number(payload?.total_pages) || group.totalPages || 1),
+              };
+            }
+          );
+
+          nextPageBatches.forEach((batch) => {
+            if (!batch?.group) return;
+            batch.group.totalPages = batch.totalPages;
+            batch.group.nextPage += 1;
+            if (Array.isArray(batch.results) && batch.results.length > 0) {
+              batch.group.results = [...batch.group.results, ...batch.results];
+            }
+          });
+
+          rankedRecommendations = rankRecommendations();
+        }
+
         setRecommendations(rankedRecommendations);
         writePersonalRecommendationsCache(cacheKey, rankedRecommendations);
       } catch (fetchError) {
@@ -152,13 +220,17 @@ export function usePersonalRecommendations({
     cacheKey,
     cacheTtlMs,
     enabled,
-    lang,
+    hiddenRecommendationKeySet,
     library,
     maxResults,
+    minimumVisibleRecommendations,
+    normalizedMediaTypeFilter,
+    pageSize,
     refreshToken,
     seedCount,
     seeds,
     tmdbLanguage,
+    visibleCount,
   ]);
 
   const filteredRecommendations = useMemo(

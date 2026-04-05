@@ -144,8 +144,20 @@ export default function CatalogView({
       <div className="flex items-center justify-between gap-4">
         <h2 className="app-page-title">{t.search.toUpperCase()}</h2>
         <div className="app-switch-wrap">
-          <button onClick={() => setMediaType('movie')} className={`app-switch-btn ${mediaType === 'movie' ? 'active' : ''}`}>{t.movies}</button>
-          <button onClick={() => setMediaType('tv')} className={`app-switch-btn ${mediaType === 'tv' ? 'active' : ''}`}>{t.tvShows}</button>
+          <button
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setMediaType('movie')}
+            className={`app-switch-btn ${mediaType === 'movie' ? 'active' : ''}`}
+          >
+            {t.movies}
+          </button>
+          <button
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setMediaType('tv')}
+            className={`app-switch-btn ${mediaType === 'tv' ? 'active' : ''}`}
+          >
+            {t.tvShows}
+          </button>
         </div>
       </div>
 

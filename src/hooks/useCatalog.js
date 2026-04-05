@@ -99,7 +99,6 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
 
     if (persistCatalogFilters) {
       const saved = catalogProfilesRef.current[nextMediaType] || createDefaultProfile();
-      setQuery(saved.query);
       setSelectedGenre(saved.selectedGenre);
       setSelectedYear(saved.selectedYear);
       setSelectedReleaseFilter(saved.selectedReleaseFilter);
@@ -108,7 +107,6 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
     } else {
       setSelectedGenre('');
       setSelectedYear('');
-      setQuery('');
       setCatalogSort((prev) => resolveCatalogSort(nextMediaType, prev));
     }
 
