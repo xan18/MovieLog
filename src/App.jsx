@@ -682,10 +682,11 @@ export default function App() {
     return Number.isFinite(year) ? year : 0;
   };
 
-  const compareByDateAdded = (a, b) => (b.dateAdded || 0) - (a.dateAdded || 0);
-  const compareByImdbRating = (a, b) => ((b.vote_average || 0) - (a.vote_average || 0)) || compareByDateAdded(a, b);
-  const compareByMyRating = (a, b) => ((b.rating || 0) - (a.rating || 0)) || compareByDateAdded(a, b);
-  const compareByReleaseYear = (a, b) => (getReleaseYear(b) - getReleaseYear(a)) || compareByDateAdded(a, b);
+  const getLibraryModifiedAt = (item) => Number(item?.dateModified || item?.dateAdded || 0);
+  const compareByDateModified = (a, b) => getLibraryModifiedAt(b) - getLibraryModifiedAt(a);
+  const compareByImdbRating = (a, b) => ((b.vote_average || 0) - (a.vote_average || 0)) || compareByDateModified(a, b);
+  const compareByMyRating = (a, b) => ((b.rating || 0) - (a.rating || 0)) || compareByDateModified(a, b);
+  const compareByReleaseYear = (a, b) => (getReleaseYear(b) - getReleaseYear(a)) || compareByDateModified(a, b);
   const getRemainingEpisodesSortValue = (item) => {
     if (item?.mediaType !== 'tv') return Number.POSITIVE_INFINITY;
     const snapshot = getTvProgressSnapshot(item.watchedEpisodes || {}, item);
@@ -698,8 +699,8 @@ export default function App() {
     const aKnown = Number.isFinite(aValue);
     const bKnown = Number.isFinite(bValue);
     if (aKnown !== bKnown) return aKnown ? -1 : 1;
-    if (!aKnown && !bKnown) return compareByDateAdded(a, b);
-    return (bValue - aValue) || compareByDateAdded(a, b);
+    if (!aKnown && !bKnown) return compareByDateModified(a, b);
+    return (bValue - aValue) || compareByDateModified(a, b);
   };
 
   const shownMovies = useMemo(() => {
@@ -707,7 +708,7 @@ export default function App() {
     if (sortBy === 'imdbRating') arr.sort(compareByImdbRating);
     else if (sortBy === 'myRating') arr.sort(compareByMyRating);
     else if (sortBy === 'releaseYear') arr.sort(compareByReleaseYear);
-    else arr.sort(compareByDateAdded);
+    else arr.sort(compareByDateModified);
     return arr;
   }, [library, shelf, sortBy]);
 
@@ -717,7 +718,7 @@ export default function App() {
     else if (sortBy === 'myRating') arr.sort(compareByMyRating);
     else if (sortBy === 'releaseYear') arr.sort(compareByReleaseYear);
     else if (sortBy === 'remainingEpisodes') arr.sort(compareByRemainingEpisodes);
-    else arr.sort(compareByDateAdded);
+    else arr.sort(compareByDateModified);
     return arr;
   }, [library, shelf, sortBy]);
 
@@ -987,7 +988,17 @@ export default function App() {
             } else {
               const season = selectedItem?.seasons?.find(s => s.season_number === ratingModal.seasonNumber);
               const watchedEpisodes = season ? { [ratingModal.seasonNumber]: Array.from({ length: season.episode_count }, (_, i) => i + 1) } : {};
-              setLibrary(prev => [...prev, { ...selectedItem, status: 'watching', rating, dateAdded: Date.now(), watchedEpisodes, seasonRatings: { [ratingModal.seasonNumber]: rating }, episodeRuntimes: {} }]);
+              const changedAt = Date.now();
+              setLibrary(prev => [...prev, {
+                ...selectedItem,
+                status: 'watching',
+                rating,
+                dateAdded: changedAt,
+                dateModified: changedAt,
+                watchedEpisodes,
+                seasonRatings: { [ratingModal.seasonNumber]: rating },
+                episodeRuntimes: {},
+              }]);
               setSelectedItem({...selectedItem, watchedEpisodes, seasonRatings: { [ratingModal.seasonNumber]: rating }, rating});
             }
             setRatingModal(null);
@@ -1021,21 +1032,32 @@ export default function App() {
               const avg = ratedSeasons.length > 0 ? Math.round(ratedSeasons.reduce((s, r) => s + r, 0) / ratedSeasons.length) : 0;
               const baseStatus = libEntry.status === 'planned' ? 'watching' : (libEntry.status || 'watching');
               const newStatus = resolveTvProgressStatus(baseStatus, updatedWatched, selectedItem, libEntry);
+              const changedAt = Date.now();
 
               setLibrary(prev => prev.map(x => (
                 x.mediaType === 'tv' && x.id === ratingModal.tvId
-                  ? { ...x, watchedEpisodes: updatedWatched, seasonRatings: updatedRatings, rating: avg, status: newStatus }
+                  ? {
+                    ...x,
+                    watchedEpisodes: updatedWatched,
+                    seasonRatings: updatedRatings,
+                    rating: avg,
+                    status: newStatus,
+                    dateAdded: x.dateAdded || changedAt,
+                    dateModified: changedAt,
+                  }
                   : x
               )));
               setSelectedItem({...selectedItem, watchedEpisodes: updatedWatched, seasonRatings: updatedRatings, rating: avg, status: newStatus});
             } else {
               const watchedEpisodes = seasonEpisodes.length > 0 ? { [ratingModal.seasonNumber]: seasonEpisodes } : {};
               const newStatus = resolveTvProgressStatus('watching', watchedEpisodes, selectedItem);
+              const changedAt = Date.now();
               setLibrary(prev => [...prev, {
                 ...selectedItem,
                 status: newStatus,
                 rating: 0,
-                dateAdded: Date.now(),
+                dateAdded: changedAt,
+                dateModified: changedAt,
                 watchedEpisodes,
                 seasonRatings: {},
                 episodeRuntimes: {},
@@ -1062,9 +1084,27 @@ export default function App() {
             if (!contextItem || !isReleasedItem(contextItem)) { setMovieRatingModal(null); return; }
             const libEntry = getLibraryEntry('movie', movieRatingModal.movieId);
             if (libEntry) {
-              setLibrary(prev => prev.map(x => x.mediaType === 'movie' && x.id === movieRatingModal.movieId ? { ...x, rating, status: 'completed' } : x));
+              const changedAt = Date.now();
+              setLibrary(prev => prev.map(x => (
+                x.mediaType === 'movie' && x.id === movieRatingModal.movieId
+                  ? {
+                    ...x,
+                    rating,
+                    status: 'completed',
+                    dateAdded: x.dateAdded || changedAt,
+                    dateModified: changedAt,
+                  }
+                  : x
+              )));
             } else {
-              setLibrary(prev => [...prev, { ...contextItem, status: 'completed', rating, dateAdded: Date.now() }]);
+              const changedAt = Date.now();
+              setLibrary(prev => [...prev, {
+                ...contextItem,
+                status: 'completed',
+                rating,
+                dateAdded: changedAt,
+                dateModified: changedAt,
+              }]);
             }
             setSelectedItem(prev => {
               if (!prev || prev.mediaType !== 'movie' || prev.id !== movieRatingModal.movieId) return prev;
@@ -1075,7 +1115,18 @@ export default function App() {
           onRemove={() => {
             const contextItem = movieRatingModal.item || selectedItem;
             if (!contextItem || !isReleasedItem(contextItem)) { setMovieRatingModal(null); return; }
-            setLibrary(prev => prev.map(x => x.mediaType === 'movie' && x.id === movieRatingModal.movieId ? { ...x, rating: 0, status: 'completed' } : x));
+            const changedAt = Date.now();
+            setLibrary(prev => prev.map(x => (
+              x.mediaType === 'movie' && x.id === movieRatingModal.movieId
+                ? {
+                  ...x,
+                  rating: 0,
+                  status: 'completed',
+                  dateAdded: x.dateAdded || changedAt,
+                  dateModified: changedAt,
+                }
+                : x
+            )));
             setSelectedItem(prev => {
               if (!prev || prev.mediaType !== 'movie' || prev.id !== movieRatingModal.movieId) return prev;
               return { ...prev, rating: 0 };

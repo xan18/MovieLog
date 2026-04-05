@@ -16,6 +16,13 @@ const normalizeDateAdded = (value) => {
   return Number.isFinite(n) && n > 0 ? n : Date.now();
 };
 
+const normalizeDateModified = (value, fallbackDateAdded) => {
+  const n = Number(value);
+  if (Number.isFinite(n) && n > 0) return n;
+  const fallback = Number(fallbackDateAdded);
+  return Number.isFinite(fallback) && fallback > 0 ? fallback : Date.now();
+};
+
 const normalizeEpisodeMap = (map) => {
   if (!isObject(map)) return {};
   return Object.entries(map).reduce((acc, [season, episodes]) => {
@@ -64,6 +71,7 @@ export const sanitizeLibraryEntry = (entry) => {
     let status = MOVIE_STATUSES.has(entry.status) ? entry.status : 'planned';
     let rating = clampRating(entry.rating);
     const released = isReleasedDate(entry.release_date);
+    const dateAdded = normalizeDateAdded(entry.dateAdded);
     if (!released && status === 'completed') {
       status = 'planned';
       rating = 0;
@@ -75,7 +83,8 @@ export const sanitizeLibraryEntry = (entry) => {
       rating,
       genres: normalizeGenres(entry.genres),
       credits: normalizeCredits(entry.credits),
-      dateAdded: normalizeDateAdded(entry.dateAdded),
+      dateAdded,
+      dateModified: normalizeDateModified(entry.dateModified, dateAdded),
     };
   }
 
@@ -85,6 +94,7 @@ export const sanitizeLibraryEntry = (entry) => {
   let watchedEpisodes = normalizeEpisodeMap(entry.watchedEpisodes);
   let seasonRatings = normalizeSeasonRatings(entry.seasonRatings);
   const released = isReleasedDate(entry.first_air_date);
+  const dateAdded = normalizeDateAdded(entry.dateAdded);
   if (!released && status === 'completed') {
     status = 'planned';
     rating = 0;
@@ -101,7 +111,8 @@ export const sanitizeLibraryEntry = (entry) => {
     watchedEpisodes,
     seasonRatings,
     episodeRuntimes: isObject(entry.episodeRuntimes) ? entry.episodeRuntimes : {},
-    dateAdded: normalizeDateAdded(entry.dateAdded),
+    dateAdded,
+    dateModified: normalizeDateModified(entry.dateModified, dateAdded),
   };
 };
 
@@ -113,7 +124,9 @@ export const sanitizeLibraryData = (list) => {
     if (!normalized) return;
     const key = `${normalized.mediaType}:${normalized.id}`;
     const existing = deduped.get(key);
-    if (!existing || normalized.dateAdded >= existing.dateAdded) {
+    const normalizedTimestamp = Math.max(normalized.dateModified || 0, normalized.dateAdded || 0);
+    const existingTimestamp = existing ? Math.max(existing.dateModified || 0, existing.dateAdded || 0) : 0;
+    if (!existing || normalizedTimestamp >= existingTimestamp) {
       deduped.set(key, normalized);
     }
   });

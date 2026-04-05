@@ -6,6 +6,12 @@ import {
   resolveTvProgressStatus,
 } from '../utils/tvStatusUtils.js';
 
+const applyModificationTimestamp = (entry, changedAt) => ({
+  ...entry,
+  dateAdded: entry?.dateAdded || changedAt,
+  dateModified: changedAt,
+});
+
 export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemRef }) {
 
   const getTvContextItem = useCallback((tvId, explicitContext = null) => {
@@ -22,8 +28,9 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
   const ensureInLibrary = useCallback((item, status) => {
     const existing = library.find(x => x.mediaType === item.mediaType && x.id === item.id);
     if (existing) return existing;
+    const changedAt = Date.now();
     const newEntry = {
-      ...item, status, rating: 0, dateAdded: Date.now(),
+      ...item, status, rating: 0, dateAdded: changedAt, dateModified: changedAt,
       ...(item.mediaType === 'tv' && { watchedEpisodes: {}, seasonRatings: {}, episodeRuntimes: {} })
     };
     setLibrary(prev => [...prev, newEntry]);
@@ -34,12 +41,20 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
     if (item.mediaType === 'movie' && status === 'completed' && !isReleasedItem(item)) return;
     const existing = getLibraryEntry(item.mediaType, item.id);
     if (existing) {
+      const changedAt = Date.now();
       setLibrary(prev =>
         prev.map(x => {
           if (x.mediaType === item.mediaType && x.id === item.id) {
             if (x.mediaType === 'tv') {
               if (status === 'planned') {
-                return { ...x, status, watchedEpisodes: {}, seasonRatings: {}, episodeRuntimes: {}, rating: 0 };
+                return applyModificationTimestamp({
+                  ...x,
+                  status,
+                  watchedEpisodes: {},
+                  seasonRatings: {},
+                  episodeRuntimes: {},
+                  rating: 0,
+                }, changedAt);
               }
               if (status === 'completed') {
                 const completionWatchedEpisodes = buildTvWatchedEpisodesForCompletion(item, x);
@@ -47,19 +62,24 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
                   ? completionWatchedEpisodes
                   : (x.watchedEpisodes || {});
                 const nextStatus = resolveTvProgressStatus('completed', nextWatchedEpisodes, item, x);
-                return { ...x, status: nextStatus, watchedEpisodes: nextWatchedEpisodes };
+                return applyModificationTimestamp({
+                  ...x,
+                  status: nextStatus,
+                  watchedEpisodes: nextWatchedEpisodes,
+                }, changedAt);
               }
-              return { ...x, status };
+              return applyModificationTimestamp({ ...x, status }, changedAt);
             }
             if (status === 'planned') {
-              return { ...x, status, rating: 0 };
+              return applyModificationTimestamp({ ...x, status, rating: 0 }, changedAt);
             }
-            return { ...x, status, rating: ratingVal || x.rating };
+            return applyModificationTimestamp({ ...x, status, rating: ratingVal || x.rating }, changedAt);
           }
           return x;
         })
       );
     } else {
+      const changedAt = Date.now();
       const completionWatchedEpisodes = item.mediaType === 'tv' && status === 'completed'
         ? buildTvWatchedEpisodesForCompletion(item)
         : {};
@@ -70,7 +90,8 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
         ...item,
         status: item.mediaType === 'tv' ? resolvedTvStatus : status,
         rating: item.mediaType === 'movie' ? (ratingVal || 0) : 0,
-        dateAdded: Date.now(),
+        dateAdded: changedAt,
+        dateModified: changedAt,
         ...(item.mediaType === 'tv' && {
           watchedEpisodes: completionWatchedEpisodes,
           seasonRatings: {},
@@ -83,6 +104,7 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
   }, [getLibraryEntry, setLibrary, setSelectedItem]);
 
   const setTvStatus = useCallback((tvId, newStatus, fullItem = null) => {
+    const changedAt = Date.now();
     setLibrary(prev =>
       prev.map(x => {
         if (x.mediaType === 'tv' && x.id === tvId) {
@@ -102,7 +124,7 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
             updated.rating = 0;
           }
           updated.status = resolveTvProgressStatus(updated.status, updated.watchedEpisodes || {}, fullItem, updated);
-          return updated;
+          return applyModificationTimestamp(updated, changedAt);
         }
         return x;
       })
@@ -110,6 +132,7 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
   }, [setLibrary]);
 
   const toggleEpisodeWatched = useCallback((tvId, seasonNum, epNum, itemForContext = null) => {
+    const changedAt = Date.now();
     setLibrary(prev =>
       prev.map(x => {
         if (x.mediaType === 'tv' && x.id === tvId) {
@@ -129,13 +152,19 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
                 ? Math.round(ratedSeasons.reduce((sum, r) => sum + r, 0) / ratedSeasons.length)
                 : 0;
               const newStatus = resolveTvProgressStatus(x.status, w, ctx, x);
-              return { ...x, watchedEpisodes: w, seasonRatings, rating: avgRating, status: newStatus };
+              return applyModificationTimestamp({
+                ...x,
+                watchedEpisodes: w,
+                seasonRatings,
+                rating: avgRating,
+                status: newStatus,
+              }, changedAt);
             }
           } else {
             w[seasonNum] = uniqSort([...w[seasonNum], epNum]);
           }
           const newStatus = resolveTvProgressStatus(x.status, w, ctx, x);
-          return { ...x, watchedEpisodes: w, status: newStatus };
+          return applyModificationTimestamp({ ...x, watchedEpisodes: w, status: newStatus }, changedAt);
         }
         return x;
       })
@@ -143,6 +172,7 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
   }, [getTvContextItem, setLibrary]);
 
   const toggleSeasonWatched = useCallback((tvId, seasonNum, episodeCount, airedEpisodes = null) => {
+    const changedAt = Date.now();
     setLibrary(prev =>
       prev.map(x => {
         if (x.mediaType === 'tv' && x.id === tvId) {
@@ -161,12 +191,18 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
               ? Math.round(ratedSeasons.reduce((sum, r) => sum + r, 0) / ratedSeasons.length)
               : 0;
             const newStatus = resolveTvProgressStatus(x.status, w, ctx, x);
-            return { ...x, watchedEpisodes: w, seasonRatings, rating: avgRating, status: newStatus };
+            return applyModificationTimestamp({
+              ...x,
+              watchedEpisodes: w,
+              seasonRatings,
+              rating: avgRating,
+              status: newStatus,
+            }, changedAt);
           } else {
             w[seasonNum] = uniqSort([...current, ...targetEps]);
           }
           const newStatus = resolveTvProgressStatus(x.status, w, ctx, x);
-          return { ...x, watchedEpisodes: w, status: newStatus };
+          return applyModificationTimestamp({ ...x, watchedEpisodes: w, status: newStatus }, changedAt);
         }
         return x;
       })
@@ -174,6 +210,7 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
   }, [getTvContextItem, setLibrary]);
 
   const setSeasonRating = useCallback((tvId, seasonNum, ratingVal) => {
+    const changedAt = Date.now();
     setLibrary(prev =>
       prev.map(x => {
         if (x.mediaType === 'tv' && x.id === tvId) {
@@ -195,7 +232,13 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
           const baseStatus = (ratingVal > 0 && x.status === 'planned') ? 'watching' : x.status;
           const ctx = getTvContextItem(tvId);
           const newStatus = resolveTvProgressStatus(baseStatus, watchedEpisodes, ctx, x);
-          return { ...x, seasonRatings, rating: avgRating, watchedEpisodes, status: newStatus };
+          return applyModificationTimestamp({
+            ...x,
+            seasonRatings,
+            rating: avgRating,
+            watchedEpisodes,
+            status: newStatus,
+          }, changedAt);
         }
         return x;
       })
@@ -214,11 +257,13 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
       setLibrary(prev => {
         const si = selectedItemRef.current;
         const watchedEpisodes = { [seasonNum]: [epNum] };
+        const changedAt = Date.now();
         const newEntry = {
           ...si,
           status: resolveTvProgressStatus('watching', watchedEpisodes, si),
           rating: 0,
-          dateAdded: Date.now(),
+          dateAdded: changedAt,
+          dateModified: changedAt,
           watchedEpisodes,
           seasonRatings: {},
           episodeRuntimes: {}
@@ -236,11 +281,13 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
       setLibrary(prev => {
         const si = selectedItemRef.current;
         const watchedEpisodes = { [seasonNum]: uniqSort([...airedEps]) };
+        const changedAt = Date.now();
         const newEntry = {
           ...si,
           status: resolveTvProgressStatus('watching', watchedEpisodes, si),
           rating: 0,
-          dateAdded: Date.now(),
+          dateAdded: changedAt,
+          dateModified: changedAt,
           watchedEpisodes,
           seasonRatings: {},
           episodeRuntimes: {}

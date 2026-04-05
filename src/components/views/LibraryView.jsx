@@ -344,6 +344,7 @@ export default function LibraryView({
       let metadataUpdatedCount = 0;
       let statusChangedCount = 0;
       let movedToWatchingCount = 0;
+      const changedAt = Date.now();
 
       const nextLibrary = library.map((item) => {
         if (item.mediaType !== 'tv') return item;
@@ -377,6 +378,8 @@ export default function LibraryView({
         return {
           ...item,
           status: nextStatus,
+          dateAdded: item.dateAdded || changedAt,
+          dateModified: changedAt,
           in_production: detail.in_production,
           next_episode_to_air: detail.next_episode_to_air || null,
           last_episode_to_air: detail.last_episode_to_air || null,
