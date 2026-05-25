@@ -134,7 +134,7 @@ export default function App() {
   const [statsView, setStatsView] = useState('statistics');
   const [peopleView, setPeopleView] = useState('directors');
   const [libraryType, setLibraryType] = useState('movie');
-  const [shelf, setShelf] = useState('planned');
+  const [shelf, setShelf] = useState('all');
   const [sortBy, setSortBy] = useState(librarySortDefault);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
@@ -166,6 +166,7 @@ export default function App() {
   const selectedItemRef = useRef(selectedItem);
   const selectedPersonRef = useRef(selectedPerson);
   const detailsModalHistoryRef = useRef([]);
+  const libraryShelfInitializedRef = useRef(false);
   const [detailsModalHistoryDepth, setDetailsModalHistoryDepth] = useState(0);
   useEffect(() => {
     selectedItemRef.current = selectedItem;
@@ -484,6 +485,12 @@ export default function App() {
       if (!['all', 'watching', 'planned', 'completed', 'dropped'].includes(shelf)) setShelf('watching');
     }
   }, [libraryType]);
+
+  useEffect(() => {
+    if (activeTab !== 'library' || libraryShelfInitializedRef.current) return;
+    libraryShelfInitializedRef.current = true;
+    setShelf('all');
+  }, [activeTab]);
 
   useEffect(() => {
     if (shelf === 'planned' && sortBy === 'myRating') {
