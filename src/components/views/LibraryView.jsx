@@ -85,6 +85,7 @@ export default function LibraryView({
   libraryType, setLibraryType,
   shelf, setShelf,
   sortBy, setSortBy,
+  sortDirection, setSortDirection,
   MOVIE_STATUSES, TV_STATUSES,
   lang,
   t,
@@ -524,12 +525,30 @@ export default function LibraryView({
             />
           </div>
           <div>
-            <CustomSelect
-              value={sortBy}
-              options={sortOptions}
-              onChange={setSortBy}
-              ariaLabel={t.filterSortLabel || t.byDateAdded}
-            />
+            <div className="flex w-full items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <CustomSelect
+                  value={sortBy}
+                  options={sortOptions}
+                  onChange={setSortBy}
+                  ariaLabel={t.filterSortLabel || t.byDateAdded}
+                  className="library-sort-select"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setSortDirection((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
+                className="h-[36px] w-[36px] shrink-0 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-xs font-black"
+                aria-label={sortDirection === 'desc'
+                  ? (lang === 'ru' ? 'Сортировка по убыванию' : 'Descending sort')
+                  : (lang === 'ru' ? 'Сортировка по возрастанию' : 'Ascending sort')}
+                title={sortDirection === 'desc'
+                  ? (lang === 'ru' ? 'Убывание' : 'Descending')
+                  : (lang === 'ru' ? 'Возрастание' : 'Ascending')}
+              >
+                {sortDirection === 'desc' ? '↓' : '↑'}
+              </button>
+            </div>
           </div>
         </div>
 

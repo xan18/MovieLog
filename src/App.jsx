@@ -136,6 +136,7 @@ export default function App() {
   const [libraryType, setLibraryType] = useState('movie');
   const [shelf, setShelf] = useState('all');
   const [sortBy, setSortBy] = useState(librarySortDefault);
+  const [sortDirection, setSortDirection] = useState('desc');
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   const setActiveTab = useCallback((tabId) => {
@@ -723,13 +724,14 @@ export default function App() {
     if (filtered.length <= 1) return filtered;
 
     const sorted = [...filtered];
-    if (sortBy === 'imdbRating') sorted.sort(compareByImdbRating);
-    else if (sortBy === 'myRating') sorted.sort(compareByMyRating);
-    else if (sortBy === 'releaseYear') sorted.sort(compareByReleaseYear);
-    else if (sortBy === 'remainingEpisodes' && libraryType === 'tv') sorted.sort(compareByRemainingEpisodes);
-    else sorted.sort(compareByDateModified);
+    const directionMultiplier = sortDirection === 'asc' ? -1 : 1;
+    if (sortBy === 'imdbRating') sorted.sort((a, b) => compareByImdbRating(a, b) * directionMultiplier);
+    else if (sortBy === 'myRating') sorted.sort((a, b) => compareByMyRating(a, b) * directionMultiplier);
+    else if (sortBy === 'releaseYear') sorted.sort((a, b) => compareByReleaseYear(a, b) * directionMultiplier);
+    else if (sortBy === 'remainingEpisodes' && libraryType === 'tv') sorted.sort((a, b) => compareByRemainingEpisodes(a, b) * directionMultiplier);
+    else sorted.sort((a, b) => compareByDateModified(a, b) * directionMultiplier);
     return sorted;
-  }, [activeTab, library, libraryType, shelf, sortBy]);
+  }, [activeTab, library, libraryType, shelf, sortBy, sortDirection]);
 
   /* Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Stats Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ */
   const statsLibrary = activeTab === 'stats' ? library : EMPTY_LIBRARY;
@@ -854,6 +856,7 @@ export default function App() {
           libraryType={libraryType} setLibraryType={setLibraryType}
           shelf={shelf} setShelf={setShelf}
           sortBy={sortBy} setSortBy={setSortBy}
+          sortDirection={sortDirection} setSortDirection={setSortDirection}
           MOVIE_STATUSES={MOVIE_STATUSES} TV_STATUSES={TV_STATUSES}
           lang={lang}
           t={t}
