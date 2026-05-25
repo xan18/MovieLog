@@ -538,7 +538,7 @@ export default function LibraryView({
               <button
                 type="button"
                 onClick={() => setSortDirection((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
-                className="h-[36px] w-[36px] shrink-0 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-xs font-black"
+                className="h-[42px] w-[42px] md:h-[36px] md:w-[36px] shrink-0 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-sm md:text-xs font-black"
                 aria-label={sortDirection === 'desc'
                   ? (lang === 'ru' ? 'Сортировка по убыванию' : 'Descending sort')
                   : (lang === 'ru' ? 'Сортировка по возрастанию' : 'Ascending sort')}
@@ -546,7 +546,12 @@ export default function LibraryView({
                   ? (lang === 'ru' ? 'Убывание' : 'Descending')
                   : (lang === 'ru' ? 'Возрастание' : 'Ascending')}
               >
-                {sortDirection === 'desc' ? '↓' : '↑'}
+                <svg viewBox="0 0 20 20" className="mx-auto h-4 w-4 md:h-3.5 md:w-3.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M6 4v11" opacity={sortDirection === 'asc' ? 1 : 0.45} />
+                  <path d="M3.8 6.4 6 4l2.2 2.4" opacity={sortDirection === 'asc' ? 1 : 0.45} />
+                  <path d="M14 16V5" opacity={sortDirection === 'desc' ? 1 : 0.45} />
+                  <path d="m11.8 13.6 2.2 2.4 2.2-2.4" opacity={sortDirection === 'desc' ? 1 : 0.45} />
+                </svg>
               </button>
             </div>
           </div>
