@@ -11,8 +11,9 @@ const STATEMENT_TIMEOUT_RETRY_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 250;
 const CLOUD_LIBRARY_CACHE_PREFIX = 'movielog:cloud-library-cache:v1';
 const CLOUD_LIBRARY_RPC_NAME = 'get_library_payloads';
+const GAME_STORAGE_ID_OFFSET = 1_000_000_000_000;
 
-const normalizeMediaType = (value) => (value === 'tv' ? 'tv' : 'movie');
+const normalizeMediaType = (value) => (['movie', 'tv', 'game'].includes(value) ? value : 'movie');
 
 const toLibraryKey = (mediaType, tmdbId) => `${normalizeMediaType(mediaType)}:${Number(tmdbId)}`;
 
@@ -127,6 +128,16 @@ const isMissingFunctionError = (error) => {
   return message.includes('function')
     && message.includes('does not exist');
 };
+
+const isMediaTypeConstraintError = (error) => {
+  const message = String(error?.message || '').toLowerCase();
+  return String(error?.code || '') === '23514'
+    || (message.includes('library_items_media_type_check') && message.includes('check constraint'));
+};
+
+const toLegacyGameStorageRow = (row) => (row.media_type === 'game'
+  ? { ...row, media_type: 'movie', tmdb_id: GAME_STORAGE_ID_OFFSET + Number(row.tmdb_id) }
+  : row);
 
 const withStatementTimeoutRetry = async (operation, attempts = STATEMENT_TIMEOUT_RETRY_ATTEMPTS) => {
   let lastError;
@@ -343,6 +354,7 @@ export function useCloudLibrarySync({
       const deleteBuckets = {
         movie: [],
         tv: [],
+        game: [],
       };
 
       nextSnapshot.forEach((nextValue, key) => {
@@ -363,7 +375,7 @@ export function useCloudLibrarySync({
         deleteBuckets[previousValue.mediaType].push(previousValue.tmdbId);
       });
 
-      if (rowsToUpsert.length === 0 && deleteBuckets.movie.length === 0 && deleteBuckets.tv.length === 0) {
+      if (rowsToUpsert.length === 0 && deleteBuckets.movie.length === 0 && deleteBuckets.tv.length === 0 && deleteBuckets.game.length === 0) {
         return;
       }
 
@@ -379,12 +391,34 @@ export function useCloudLibrarySync({
               const { error } = await supabaseClient
                 .from('library_items')
                 .upsert(adaptiveBatch, { onConflict: 'user_id,media_type,tmdb_id' });
-              if (error) throw error;
+              if (!error) {
+                const nativeGameIds = adaptiveBatch
+                  .filter((row) => row.media_type === 'game')
+                  .map((row) => GAME_STORAGE_ID_OFFSET + Number(row.tmdb_id));
+                if (nativeGameIds.length > 0) {
+                  const { error: cleanupError } = await supabaseClient
+                    .from('library_items')
+                    .delete()
+                    .eq('user_id', currentUserId)
+                    .eq('media_type', 'movie')
+                    .in('tmdb_id', nativeGameIds);
+                  if (cleanupError) throw cleanupError;
+                }
+                return;
+              }
+              if (!isMediaTypeConstraintError(error) || !adaptiveBatch.some((row) => row.media_type === 'game')) throw error;
+
+              // Older installations only allow movie/tv in media_type. Keep the
+              // game payload intact and place its RAWG id in a collision-free range.
+              const { error: fallbackError } = await supabaseClient
+                .from('library_items')
+                .upsert(adaptiveBatch.map(toLegacyGameStorageRow), { onConflict: 'user_id,media_type,tmdb_id' });
+              if (fallbackError) throw fallbackError;
             },
           });
         }
 
-        for (const mediaType of ['movie', 'tv']) {
+        for (const mediaType of ['movie', 'tv', 'game']) {
           const ids = deleteBuckets[mediaType];
           if (!ids.length) continue;
           for (const batch of chunkArray(ids, DELETE_BATCH_SIZE)) {
@@ -398,6 +432,16 @@ export function useCloudLibrarySync({
                   .eq('media_type', mediaType)
                   .in('tmdb_id', adaptiveBatch);
                 if (error) throw error;
+
+                if (mediaType === 'game') {
+                  const { error: fallbackError } = await supabaseClient
+                    .from('library_items')
+                    .delete()
+                    .eq('user_id', currentUserId)
+                    .eq('media_type', 'movie')
+                    .in('tmdb_id', adaptiveBatch.map((id) => GAME_STORAGE_ID_OFFSET + Number(id)));
+                  if (fallbackError) throw fallbackError;
+                }
               },
             });
           }

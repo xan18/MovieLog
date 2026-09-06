@@ -91,7 +91,7 @@ function RatingChart({ ratingDist, gradId }) {
 }
 
 export default function StatsView({
-  movieStats, tvStats, peopleData,
+  movieStats, tvStats, gameStats, peopleData,
   t,
   statsView, setStatsView,
   peopleView, setPeopleView,
@@ -134,7 +134,7 @@ export default function StatsView({
   return (
     <div className="view-stack">
       <SegmentedControl
-        items={[{ id: 'statistics', label: `\u{1F4CA} ${t.statistics}` }, { id: 'people', label: `\u{1F465} ${t.people}` }]}
+        items={[{ id: 'statistics', label: `\u{1F4CA} ${t.statistics}` }, { id: 'games', label: `\u{1F3AE} ${t.gameStatistics}` }, { id: 'people', label: `\u{1F465} ${t.people}` }]}
         activeId={statsView}
         onChange={setStatsView}
       />
@@ -369,6 +369,60 @@ export default function StatsView({
                 </div>
               </div>
             )}
+          </section>
+        </div>
+      )}
+
+      {statsView === 'games' && (
+        <div className="analytics-layout space-y-5">
+          <section className="analytics-hero">
+            <p className="analytics-overline">{t.gameStatistics}</p>
+            <div className="analytics-total-row">
+              <p className="analytics-total">{gameStats.total}</p>
+              <p className="analytics-total-caption">{t.gameTotal}</p>
+            </div>
+            <div className="analytics-kpi-grid">
+              <article className="analytics-kpi"><p className="analytics-kpi-value">{gameStats.playing}</p><p className="analytics-kpi-label">{t.gamePlayingNow}</p></article>
+              <article className="analytics-kpi"><p className="analytics-kpi-value">{gameStats.completed}</p><p className="analytics-kpi-label">{t.gameCompletedCount}</p></article>
+              <article className="analytics-kpi"><p className="analytics-kpi-value">{gameStats.completionRate}%</p><p className="analytics-kpi-label">{t.gameCompletionRate}</p></article>
+            </div>
+          </section>
+
+          <section className="analytics-section">
+            <div className="analytics-metric-grid analytics-metric-grid-tv">
+              <article className="analytics-metric-card"><p className="analytics-metric-label">{t.inPlans}</p><p className="analytics-metric-value">{gameStats.planned}</p></article>
+              <article className="analytics-metric-card"><p className="analytics-metric-label">{t.playing}</p><p className="analytics-metric-value">{gameStats.playing}</p></article>
+              <article className="analytics-metric-card"><p className="analytics-metric-label">{t.gameCompleted}</p><p className="analytics-metric-value">{gameStats.completed}</p></article>
+              <article className="analytics-metric-card"><p className="analytics-metric-label">{t.droppedStat}</p><p className="analytics-metric-value">{gameStats.dropped}</p></article>
+            </div>
+
+            <div className="analytics-meta-grid">
+              <article className="analytics-meta-card"><p className="analytics-meta-label">{t.avgRating}</p><p className="analytics-meta-value">{gameStats.avgRating || '—'}</p></article>
+              <article className="analytics-meta-card"><p className="analytics-meta-label">{t.gamePlaytime}</p><p className="analytics-meta-value">{gameStats.totalPlaytime ? `${gameStats.totalPlaytime} ${t.gameHours}` : '—'}</p></article>
+              <article className="analytics-meta-card"><p className="analytics-meta-label">{t.rated}</p><p className="analytics-meta-value">{gameStats.rated}</p></article>
+            </div>
+
+            {gameStats.rated > 0 && <div className="analytics-block"><p className="analytics-block-title">{t.ratingDist}</p><div className="analytics-chart-wrap"><RatingChart ratingDist={gameStats.ratingDist} gradId="game" /></div></div>}
+
+            {gameStats.topRated.length > 0 && (
+              <div className="analytics-block">
+                <p className="analytics-block-title">{t.gameBest}</p>
+                <div className="analytics-list">
+                  {gameStats.topRated.map((game, index) => (
+                    <button key={game.id} onClick={() => handleDetailsOpen(game)} className="analytics-list-row">
+                      <span className="analytics-list-rank">{index + 1}</span>
+                      {game.posterUrl ? <LazyImg src={game.posterUrl} className="analytics-list-poster" /> : <span className="analytics-list-poster analytics-list-poster-empty" />}
+                      <span className="analytics-list-main"><span className="analytics-list-title">{game.name}</span><span className="analytics-list-subtitle">{game.platform || ''}</span></span>
+                      <span className="analytics-list-score">{game.rating}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {Object.keys(gameStats.byGenre).length > 0 && <div className="analytics-block"><p className="analytics-block-title">{t.gameFavoriteGenres}</p><div className="analytics-chip-wrap">{Object.entries(gameStats.byGenre).sort(([, a], [, b]) => b - a).map(([name, count]) => <span key={name} className="analytics-chip">{name}: {count}</span>)}</div></div>}
+            {Object.keys(gameStats.byPlatform).length > 0 && <div className="analytics-block"><p className="analytics-block-title">{t.gamePlatforms}</p><div className="analytics-chip-wrap">{Object.entries(gameStats.byPlatform).sort(([, a], [, b]) => b - a).map(([name, count]) => <span key={name} className="analytics-chip">{name}: {count}</span>)}</div></div>}
+            <a href="https://rawg.io" target="_blank" rel="noreferrer" className="inline-flex text-xs font-bold text-blue-300 underline underline-offset-4">{t.rawgAttribution}</a>
           </section>
         </div>
       )}

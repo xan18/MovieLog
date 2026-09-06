@@ -1,14 +1,41 @@
 import React from 'react';
 import { isReleasedItem } from '../../utils/releaseUtils.js';
 
+function GameQuickActions({ item, t, GAME_STATUSES, existing, applyQuickGameAction, removeFromLibrary, close }) {
+  const platformNames = Array.from(new Set([
+    ...(item.parentPlatforms || []).map((entry) => entry?.name),
+    ...(item.platforms || []).map((entry) => entry?.name || entry?.platform?.name),
+  ].filter(Boolean)));
+  const [platform, setPlatform] = React.useState(existing?.platform || platformNames[0] || '');
+
+  return (
+    <div className="space-y-2">
+      <select value={platform} onChange={(event) => setPlatform(event.target.value)} className="app-input w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold">
+        <option value="">{t.gameSelectPlatform}</option>
+        {platformNames.map((name) => <option key={name} value={name}>{name}</option>)}
+      </select>
+      {GAME_STATUSES.map((status) => (
+        <button key={status.id} disabled={!platform} onClick={() => applyQuickGameAction(item, status.id, platform)} className="w-full text-left px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold uppercase tracking-wide disabled:opacity-40">
+          {status.label}
+        </button>
+      ))}
+      {existing && (
+        <button onClick={() => { removeFromLibrary('game', item.id); close(); }} className="w-full text-left px-3 py-2 rounded-xl bg-red-600/15 hover:bg-red-600/25 border border-red-500/30 text-xs font-bold uppercase tracking-wide">{t.delete}</button>
+      )}
+    </div>
+  );
+}
+
 export default function QuickActionsMenu({
   quickActions,
   setQuickActions,
   t,
   TV_STATUSES,
+  GAME_STATUSES,
   getLibraryEntry,
   applyQuickMovieAction,
   applyQuickTvAction,
+  applyQuickGameAction,
   hideFromForYouRecommendations,
   removeFromLibrary,
 }) {
@@ -23,7 +50,17 @@ export default function QuickActionsMenu({
         onClick={(e) => e.stopPropagation()}
       >
         <p className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-2 px-2">{t.quickActions}</p>
-        {quickActions.item.mediaType === 'movie' ? (
+        {quickActions.item.mediaType === 'game' ? (
+          <GameQuickActions
+            item={quickActions.item}
+            t={t}
+            GAME_STATUSES={GAME_STATUSES}
+            existing={getLibraryEntry('game', quickActions.item.id)}
+            applyQuickGameAction={applyQuickGameAction}
+            removeFromLibrary={removeFromLibrary}
+            close={() => setQuickActions(null)}
+          />
+        ) : quickActions.item.mediaType === 'movie' ? (
           <div className="space-y-2">
             <button
               onClick={() => applyQuickMovieAction(quickActions.item, 'planned')}

@@ -86,4 +86,28 @@ describe('sanitizeLibraryEntry', () => {
     expect(entry?.seasonRatings).toEqual({ 1: 8 });
     expect(entry?.rating).toBe(8);
   });
+
+  it('keeps game status, platform and compact RAWG metadata', () => {
+    const entry = sanitizeLibraryEntry({
+      mediaType: 'game',
+      id: 3498,
+      name: 'Grand Theft Auto V',
+      status: 'playing',
+      platform: 'PC',
+      rating: 9,
+      background_image: 'discarded',
+      posterUrl: 'https://example.com/game.jpg',
+      genres: [{ id: 4, name: 'Action', slug: 'action' }],
+      platforms: [{ id: 4, name: 'PC', slug: 'pc' }],
+      parentPlatforms: [{ platform: { id: 1, name: 'PC', slug: 'pc' } }],
+      short_screenshots: [{ id: 1 }],
+      dateAdded: 100,
+    });
+
+    expect(entry).toMatchObject({ mediaType: 'game', status: 'playing', platform: 'PC', rating: 9 });
+    expect(entry?.platforms).toEqual([{ id: 4, name: 'PC', slug: 'pc' }]);
+    expect(entry?.parentPlatforms).toEqual([{ id: 1, name: 'PC', slug: 'pc' }]);
+    expect(entry).not.toHaveProperty('short_screenshots');
+    expect(entry).not.toHaveProperty('background_image');
+  });
 });

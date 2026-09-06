@@ -1,6 +1,7 @@
 ﻿import { useState, useRef, useEffect, useCallback } from 'react';
 import { useDebounce } from './useDebounce.js';
 import { tmdbFetchJson } from '../services/tmdb.js';
+import { normalizeRawgGame, rawgFetchJson } from '../services/rawg.js';
 import { isReleasedDate } from '../utils/releaseUtils.js';
 import { getCatalogSortOptions, getReleaseFilterOptions } from '../utils/uiOptions.js';
 import { CATALOG_FILTERS_KEY } from '../constants/appConstants.js';
@@ -13,10 +14,14 @@ function createDefaultProfile() {
     selectedReleaseFilter: 'all',
     catalogSort: 'popularity.desc',
     catalogLibraryFilter: 'all',
+    selectedPlatform: '',
   };
 }
 
 export function resolveCatalogSort(mediaType, sortValue) {
+  if (mediaType === 'game') {
+    return ['-added', '-rating', '-metacritic', '-released'].includes(sortValue) ? sortValue : '-added';
+  }
   const newest = mediaType === 'movie' ? 'primary_release_date.desc' : 'first_air_date.desc';
   if (sortValue === 'primary_release_date.desc' && mediaType === 'tv') return newest;
   if (sortValue === 'first_air_date.desc' && mediaType === 'movie') return newest;
@@ -24,7 +29,7 @@ export function resolveCatalogSort(mediaType, sortValue) {
 }
 
 function readStoredCatalogFilters() {
-  const defaults = { movie: createDefaultProfile(), tv: createDefaultProfile() };
+  const defaults = { movie: createDefaultProfile(), tv: createDefaultProfile(), game: createDefaultProfile() };
   try {
     const raw = localStorage.getItem(CATALOG_FILTERS_KEY);
     if (!raw) return { mediaType: 'movie', profiles: defaults };
@@ -41,13 +46,15 @@ function readStoredCatalogFilters() {
       catalogLibraryFilter: ['all', 'hideAdded'].includes(profile?.catalogLibraryFilter)
         ? profile.catalogLibraryFilter
         : 'all',
+      selectedPlatform: typeof profile?.selectedPlatform === 'string' ? profile.selectedPlatform : '',
     });
-    const mediaType = parsed?.mediaType === 'tv' ? 'tv' : 'movie';
+    const mediaType = ['movie', 'tv', 'game'].includes(parsed?.mediaType) ? parsed.mediaType : 'movie';
     return {
       mediaType,
       profiles: {
         movie: safeProfile(parsed?.profiles?.movie),
         tv: safeProfile(parsed?.profiles?.tv),
+        game: safeProfile(parsed?.profiles?.game),
       },
     };
   } catch (error) {
@@ -63,7 +70,7 @@ export function useCatalog({ lang, t, persistCatalogFilters, enabled = true }) {
   if (!initialStoredRef.current) {
     initialStoredRef.current = persistCatalogFilters
       ? readStoredCatalogFilters()
-      : { mediaType: 'movie', profiles: { movie: createDefaultProfile(), tv: createDefaultProfile() } };
+      : { mediaType: 'movie', profiles: { movie: createDefaultProfile(), tv: createDefaultProfile(), game: createDefaultProfile() } };
   }
   const initialStored = initialStoredRef.current;
 
@@ -79,7 +86,11 @@ export function useCatalog({ lang, t, persistCatalogFilters, enabled = true }) {
   const [catalogLibraryFilter, setCatalogLibraryFilter] = useState(
     initialStored.profiles[initialStored.mediaType].catalogLibraryFilter
   );
+  const [selectedPlatform, setSelectedPlatform] = useState(
+    initialStored.profiles[initialStored.mediaType].selectedPlatform
+  );
   const [genres, setGenres] = useState([]);
+  const [platforms, setPlatforms] = useState([]);
   const genreCache = useRef({});
   const catalogProfilesRef = useRef(initialStored.profiles);
   const [catalogItems, setCatalogItems] = useState([]);
@@ -94,7 +105,7 @@ export function useCatalog({ lang, t, persistCatalogFilters, enabled = true }) {
   const RELEASE_FILTER_OPTIONS = getReleaseFilterOptions(t);
 
   const setMediaType = useCallback((nextMediaType) => {
-    if (!['movie', 'tv'].includes(nextMediaType)) return;
+    if (!['movie', 'tv', 'game'].includes(nextMediaType)) return;
     if (nextMediaType === mediaType) return;
     setMediaTypeState(nextMediaType);
 
@@ -105,10 +116,12 @@ export function useCatalog({ lang, t, persistCatalogFilters, enabled = true }) {
       setSelectedReleaseFilter(saved.selectedReleaseFilter);
       setCatalogSort(resolveCatalogSort(nextMediaType, saved.catalogSort));
       setCatalogLibraryFilter(saved.catalogLibraryFilter);
+      setSelectedPlatform(saved.selectedPlatform);
     } else {
       setSelectedGenre('');
       setSelectedYear('');
       setCatalogSort((prev) => resolveCatalogSort(nextMediaType, prev));
+      setSelectedPlatform('');
     }
 
     setCatalogItems([]);
@@ -131,13 +144,14 @@ export function useCatalog({ lang, t, persistCatalogFilters, enabled = true }) {
       selectedReleaseFilter,
       catalogSort: resolveCatalogSort(mediaType, catalogSort),
       catalogLibraryFilter,
+      selectedPlatform,
     };
     const payload = {
       mediaType,
       profiles: catalogProfilesRef.current,
     };
     localStorage.setItem(CATALOG_FILTERS_KEY, JSON.stringify(payload));
-  }, [persistCatalogFilters, mediaType, query, selectedGenre, selectedYear, selectedReleaseFilter, catalogSort, catalogLibraryFilter]);
+  }, [persistCatalogFilters, mediaType, query, selectedGenre, selectedYear, selectedReleaseFilter, catalogSort, catalogLibraryFilter, selectedPlatform]);
 
   // Fetch genres with cache
   useEffect(() => {
@@ -150,13 +164,17 @@ export function useCatalog({ lang, t, persistCatalogFilters, enabled = true }) {
     const controller = new AbortController();
     (async () => {
       try {
-        const data = await tmdbFetchJson(
-          `/genre/${mediaType}/list`,
-          { language: TMDB_LANG },
-          { signal: controller.signal }
-        );
+        const data = mediaType === 'game'
+          ? await rawgFetchJson('genres', { page_size: 40 }, { signal: controller.signal })
+          : await tmdbFetchJson(
+              `/genre/${mediaType}/list`,
+              { language: TMDB_LANG },
+              { signal: controller.signal }
+            );
         if (controller.signal.aborted) return;
-        const list = Array.isArray(data?.genres) ? data.genres : [];
+        const list = mediaType === 'game'
+          ? (Array.isArray(data?.results) ? data.results : [])
+          : (Array.isArray(data?.genres) ? data.genres : []);
         genreCache.current[cacheKey] = list;
         setGenres(list);
       } catch (error) {
@@ -169,11 +187,25 @@ export function useCatalog({ lang, t, persistCatalogFilters, enabled = true }) {
     return () => controller.abort();
   }, [enabled, mediaType, TMDB_LANG]);
 
+  useEffect(() => {
+    if (!enabled || mediaType !== 'game') return;
+    const controller = new AbortController();
+    rawgFetchJson('platforms/lists/parents', {}, { signal: controller.signal })
+      .then((data) => {
+        if (!controller.signal.aborted) setPlatforms(Array.isArray(data?.results) ? data.results : []);
+      })
+      .catch((error) => {
+        if (error?.name !== 'AbortError') console.error('Failed to load RAWG platforms', error);
+        if (!controller.signal.aborted) setPlatforms([]);
+      });
+    return () => controller.abort();
+  }, [enabled, mediaType]);
+
   // Fetch catalog
   useEffect(() => {
     if (!enabled) return;
     const requestKey = JSON.stringify([
-      mediaType, debouncedQuery, selectedGenre, selectedYear,
+      mediaType, debouncedQuery, selectedGenre, selectedYear, selectedPlatform,
       selectedReleaseFilter, catalogSort, page, TMDB_LANG,
     ]);
     // Returning to the tab must retain loaded pages without appending the last page twice.
@@ -184,7 +216,22 @@ export function useCatalog({ lang, t, persistCatalogFilters, enabled = true }) {
     (async () => {
       try {
         let data;
-        if (debouncedQuery.trim()) {
+        if (mediaType === 'game') {
+          const params = {
+            page,
+            page_size: 20,
+            ordering: resolveCatalogSort('game', catalogSort),
+            exclude_additions: true,
+          };
+          if (debouncedQuery.trim()) {
+            params.search = debouncedQuery.trim();
+            params.search_precise = true;
+          }
+          if (selectedGenre) params.genres = selectedGenre;
+          if (selectedPlatform) params.parent_platforms = selectedPlatform;
+          if (selectedYear) params.dates = `${selectedYear}-01-01,${selectedYear}-12-31`;
+          data = await rawgFetchJson('games', params, { signal: controller.signal });
+        } else if (debouncedQuery.trim()) {
           data = await tmdbFetchJson(`/search/${mediaType}`, {
             language: TMDB_LANG,
             query: debouncedQuery,
@@ -205,17 +252,21 @@ export function useCatalog({ lang, t, persistCatalogFilters, enabled = true }) {
         }
 
         if (controller.signal.aborted) return;
-        const items = (data?.results || []).map((it) => ({ ...it, mediaType }));
+        const items = mediaType === 'game'
+          ? (data?.results || []).map(normalizeRawgGame).filter(Boolean)
+          : (data?.results || []).map((it) => ({ ...it, mediaType }));
         const filteredItems = items.filter((it) => {
           if (selectedReleaseFilter === 'all') return true;
-          const date = mediaType === 'movie' ? it.release_date : it.first_air_date;
+          const date = mediaType === 'tv' ? it.first_air_date : it.release_date;
           const released = isReleasedDate(date);
           return selectedReleaseFilter === 'released' ? released : !released;
         });
 
-        const nextTotalPages = Math.max(1, Number(data?.total_pages || 1));
+        const nextTotalPages = mediaType === 'game'
+          ? (data?.next ? page + 1 : page)
+          : Math.max(1, Number(data?.total_pages || 1));
         setTotalPages(nextTotalPages);
-        setHasMore(page < nextTotalPages);
+        setHasMore(mediaType === 'game' ? Boolean(data?.next) : page < nextTotalPages);
         setCatalogItems((prev) => (page === 1 ? filteredItems : [...prev, ...filteredItems]));
         loadedRequestRef.current = requestKey;
       } catch (error) {
@@ -231,7 +282,7 @@ export function useCatalog({ lang, t, persistCatalogFilters, enabled = true }) {
     return () => {
       controller.abort();
     };
-  }, [enabled, mediaType, debouncedQuery, selectedGenre, selectedYear, selectedReleaseFilter, catalogSort, page, TMDB_LANG, t.networkError]);
+  }, [enabled, mediaType, debouncedQuery, selectedGenre, selectedYear, selectedPlatform, selectedReleaseFilter, catalogSort, page, TMDB_LANG, t.networkError]);
 
   return {
     mediaType, setMediaType,
@@ -239,10 +290,12 @@ export function useCatalog({ lang, t, persistCatalogFilters, enabled = true }) {
     debouncedQuery,
     selectedGenre, setSelectedGenre,
     selectedYear, setSelectedYear,
+    selectedPlatform, setSelectedPlatform,
     selectedReleaseFilter, setSelectedReleaseFilter,
     catalogSort, setCatalogSort,
     catalogLibraryFilter, setCatalogLibraryFilter,
     genres,
+    platforms,
     catalogItems,
     page, setPage,
     totalPages,

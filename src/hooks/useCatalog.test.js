@@ -10,10 +10,12 @@ describe('resolveCatalogSort', () => {
   it('keeps supported sort modes unchanged', () => {
     expect(resolveCatalogSort('movie', 'vote_average.desc')).toBe('vote_average.desc');
     expect(resolveCatalogSort('tv', 'popularity.desc')).toBe('popularity.desc');
+    expect(resolveCatalogSort('game', '-metacritic')).toBe('-metacritic');
   });
 
   it('falls back to popularity for unsupported values', () => {
     expect(resolveCatalogSort('movie', 'unknown')).toBe('popularity.desc');
     expect(resolveCatalogSort('tv', 'random')).toBe('popularity.desc');
+    expect(resolveCatalogSort('game', 'random')).toBe('-added');
   });
 });

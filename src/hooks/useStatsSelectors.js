@@ -135,6 +135,41 @@ export function useStatsSelectors({ library, peopleView }) {
     };
   }, [library]);
 
+  const gameStats = useMemo(() => {
+    const games = library.filter((item) => item.mediaType === 'game');
+    const byStatus = (status) => games.filter((item) => item.status === status);
+    const rated = games.filter((item) => Number(item.rating) > 0);
+    const byGenre = {};
+    const byPlatform = {};
+    const ratingDist = {};
+    games.forEach((game) => {
+      (game.genres || []).forEach((genre) => {
+        if (genre?.name) byGenre[genre.name] = (byGenre[genre.name] || 0) + 1;
+      });
+      if (game.platform) byPlatform[game.platform] = (byPlatform[game.platform] || 0) + 1;
+    });
+    rated.forEach((game) => {
+      const value = Math.round(Number(game.rating));
+      ratingDist[value] = (ratingDist[value] || 0) + 1;
+    });
+    const completed = byStatus('completed');
+    return {
+      total: games.length,
+      planned: byStatus('planned').length,
+      playing: byStatus('playing').length,
+      completed: completed.length,
+      dropped: byStatus('dropped').length,
+      rated: rated.length,
+      avgRating: rated.length ? (rated.reduce((sum, game) => sum + Number(game.rating), 0) / rated.length).toFixed(1) : 0,
+      totalPlaytime: completed.reduce((sum, game) => sum + (Number(game.playtime) || 0), 0),
+      completionRate: games.length ? Math.round((completed.length / games.length) * 100) : 0,
+      byGenre,
+      byPlatform,
+      ratingDist,
+      topRated: [...rated].sort((a, b) => Number(b.rating) - Number(a.rating)).slice(0, 5),
+    };
+  }, [library]);
+
   const peopleData = useMemo(() => {
     const peopleMap = {};
 
@@ -195,6 +230,7 @@ export function useStatsSelectors({ library, peopleView }) {
   return {
     movieStats,
     tvStats,
+    gameStats,
     peopleData,
   };
 }

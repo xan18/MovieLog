@@ -15,6 +15,7 @@ import {
 
 const pickDisplayTitle = (item, lang) => {
   if (!item) return '';
+  if (item.mediaType === 'game') return item.name || item.title || '';
   const isRu = lang === 'ru';
   if (item.mediaType === 'movie') {
     if (isRu) return item.title_ru || item.title || item.title_en || item.original_title || '';
@@ -84,6 +85,7 @@ const LibraryCard = React.memo(function LibraryCard({
   onContextMenu, onTouchStart, onTouchMove, onTouchEnd, onTouchCancel,
 }) {
   const displayTitle = pickDisplayTitle(item, lang);
+  const isGame = item.mediaType === 'game';
   const epProgress = (() => {
     if (item.mediaType !== 'tv') return null;
     const progress = getTvProgressSnapshot(item.watchedEpisodes || {}, item);
@@ -115,8 +117,8 @@ const LibraryCard = React.memo(function LibraryCard({
     >
       <div onClick={() => onCardClick(item)} className="media-poster cursor-pointer">
         <LazyImg
-          src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'}
-          srcSet={item.poster_path ? [185, 342, 500].map((width) => (
+          src={isGame ? (item.posterUrl || '/poster-placeholder.svg') : (item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg')}
+          srcSet={!isGame && item.poster_path ? [185, 342, 500].map((width) => (
             `https://image.tmdb.org/t/p/w${width}${item.poster_path} ${width}w`
           )).join(', ') : undefined}
           sizes="(min-width: 1180px) 212px, (min-width: 1024px) calc(20vw - 24px), (min-width: 768px) calc(25vw - 26px), calc(50vw - 26px)"
@@ -152,7 +154,8 @@ const LibraryCard = React.memo(function LibraryCard({
           </svg>
         </button>
         <div className="card-info-overlay">
-          {item.vote_average > 0 && <p className="text-xs font-bold mb-0.5">{'\u2605'} {item.vote_average.toFixed(1)}</p>}
+          {isGame && item.metacritic > 0 && <p className="text-xs font-bold mb-0.5">MC {item.metacritic}</p>}
+          {!isGame && item.vote_average > 0 && <p className="text-xs font-bold mb-0.5">{'\u2605'} {item.vote_average.toFixed(1)}</p>}
           <p className="text-[10px] font-normal opacity-70">{getYear(item)}</p>
         </div>
       </div>
@@ -173,6 +176,7 @@ const LibraryCard = React.memo(function LibraryCard({
       )}
       <h3 className="media-title line-clamp-2">{displayTitle}</h3>
       <p className="media-meta font-normal">{getYear(item)}</p>
+      {isGame && item.platform && <p className="text-[10px] opacity-55 mt-1 truncate">{item.platform}</p>}
       {epProgress?.waitingForNewEpisodes && (
         <p className="text-[10px] font-black uppercase tracking-widest text-sky-300 mt-1">
           {t.waitingForNewEpisodes || t.waiting || 'Waiting'}
@@ -190,7 +194,7 @@ export default function LibraryView({
   shelf, setShelf,
   sortBy, setSortBy,
   sortDirection, setSortDirection,
-  MOVIE_STATUSES, TV_STATUSES,
+  MOVIE_STATUSES, TV_STATUSES, GAME_STATUSES,
   lang,
   t,
   onCardClick,
@@ -203,6 +207,7 @@ export default function LibraryView({
   const [selectedGenre, setSelectedGenre] = React.useState('');
   const [selectedYear, setSelectedYear] = React.useState('');
   const [selectedReleaseFilter, setSelectedReleaseFilter] = React.useState('all');
+  const [selectedPlatform, setSelectedPlatform] = React.useState('');
   const [visiblePageCount, setVisiblePageCount] = React.useState(1);
   const [genreCatalog, setGenreCatalog] = React.useState([]);
   const [isLibraryRefreshRunning, setIsLibraryRefreshRunning] = React.useState(false);
@@ -225,7 +230,7 @@ export default function LibraryView({
     onCardClick(item);
   }, [consumeLongPress, onCardClick]);
 
-  const mediaTypeStatuses = libraryType === 'movie' ? MOVIE_STATUSES : TV_STATUSES;
+  const mediaTypeStatuses = libraryType === 'movie' ? MOVIE_STATUSES : libraryType === 'tv' ? TV_STATUSES : GAME_STATUSES;
   const mediaTypeLibraryItems = React.useMemo(
     () => library.filter((item) => item.mediaType === libraryType),
     [library, libraryType]
@@ -233,9 +238,18 @@ export default function LibraryView({
 
   React.useEffect(() => {
     setSelectedGenre('');
+    setSelectedPlatform('');
   }, [libraryType]);
 
   React.useEffect(() => {
+    if (libraryType === 'game') {
+      const byId = new Map();
+      mediaTypeLibraryItems.forEach((item) => (item.genres || []).forEach((genre) => {
+        if (genre?.id && genre?.name) byId.set(Number(genre.id), genre);
+      }));
+      setGenreCatalog(Array.from(byId.values()));
+      return;
+    }
     const cacheKey = `${libraryType}:${TMDB_LANG}`;
     if (genreCacheRef.current[cacheKey]) {
       setGenreCatalog(genreCacheRef.current[cacheKey]);
@@ -262,18 +276,18 @@ export default function LibraryView({
     })();
 
     return () => controller.abort();
-  }, [libraryType, TMDB_LANG]);
+  }, [libraryType, TMDB_LANG, mediaTypeLibraryItems]);
 
   const canSortByMyRating = shelf !== 'planned';
   const sortOptions = React.useMemo(() => ([
-    { value: 'imdbRating', label: t.byImdbRating },
+    { value: 'imdbRating', label: libraryType === 'game' ? t.rating : t.byImdbRating },
     ...(canSortByMyRating ? [{ value: 'myRating', label: t.byMyRating }] : []),
     ...(libraryType === 'tv'
       ? [{ value: 'remainingEpisodes', label: t.byRemainingEpisodes || 'By remaining episodes' }]
       : []),
     { value: 'dateAdded', label: t.byDateAdded },
     { value: 'releaseYear', label: t.byReleaseYear },
-  ]), [canSortByMyRating, libraryType, t.byDateAdded, t.byImdbRating, t.byMyRating, t.byReleaseYear, t.byRemainingEpisodes]);
+  ]), [canSortByMyRating, libraryType, t.byDateAdded, t.byImdbRating, t.byMyRating, t.byReleaseYear, t.byRemainingEpisodes, t.rating]);
 
   const statusOptions = React.useMemo(() => ([
     {
@@ -330,6 +344,12 @@ export default function LibraryView({
       ...years.map((year) => ({ value: String(year), label: String(year) })),
     ];
   }, [mediaTypeLibraryItems, t.filterYearLabel, t.allYears]);
+  const platformOptions = React.useMemo(() => ([
+    { value: '', label: t.allPlatforms },
+    ...Array.from(new Set(mediaTypeLibraryItems.map((item) => item.platform).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => ({ value: name, label: name })),
+  ]), [mediaTypeLibraryItems, t.allPlatforms]);
 
   const normalizedLibraryQuery = libraryQuery.trim().toLocaleLowerCase();
   const filteredShown = React.useMemo(() => (
@@ -345,7 +365,7 @@ export default function LibraryView({
       }
 
       if (selectedReleaseFilter !== 'all') {
-        const date = item.mediaType === 'movie' ? item.release_date : item.first_air_date;
+        const date = item.mediaType === 'tv' ? item.first_air_date : item.release_date;
         const released = isReleasedDate(date);
         if (selectedReleaseFilter === 'released' && !released) return false;
         if (selectedReleaseFilter === 'upcoming' && released) return false;
@@ -358,12 +378,14 @@ export default function LibraryView({
         if (!genreIds.includes(targetGenreId)) return false;
       }
 
+      if (selectedPlatform && item.platform !== selectedPlatform) return false;
+
       return true;
     })
-  ), [shown, normalizedLibraryQuery, lang, selectedYear, selectedReleaseFilter, selectedGenre]);
+  ), [shown, normalizedLibraryQuery, lang, selectedYear, selectedReleaseFilter, selectedGenre, selectedPlatform]);
 
   const hasActiveLocalFilters = Boolean(
-    libraryQuery.trim() || selectedGenre || selectedYear || selectedReleaseFilter !== 'all'
+    libraryQuery.trim() || selectedGenre || selectedYear || selectedPlatform || selectedReleaseFilter !== 'all'
   );
   const targetVisibleCount = visiblePageCount * LIBRARY_PAGE_SIZE;
   const visibleLibraryItems = filteredShown.slice(0, targetVisibleCount);
@@ -373,13 +395,14 @@ export default function LibraryView({
     setLibraryQuery('');
     setSelectedGenre('');
     setSelectedYear('');
+    setSelectedPlatform('');
     setSelectedReleaseFilter('all');
     setVisiblePageCount(1);
   };
 
   React.useEffect(() => {
     setVisiblePageCount(1);
-  }, [libraryType, shelf, sortBy, libraryQuery, selectedGenre, selectedYear, selectedReleaseFilter]);
+  }, [libraryType, shelf, sortBy, libraryQuery, selectedGenre, selectedYear, selectedPlatform, selectedReleaseFilter]);
 
   const handleLoadMore = React.useCallback(() => {
     setVisiblePageCount((prev) => prev + 1);
@@ -556,6 +579,13 @@ export default function LibraryView({
             >
               {t.tvShows}
             </button>
+            <button
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => setLibraryType('game')}
+              className={`app-switch-btn ${libraryType === 'game' ? 'active' : ''}`}
+            >
+              {t.games}
+            </button>
           </div>
         </div>
       </div>
@@ -576,7 +606,7 @@ export default function LibraryView({
         <div className="relative">
           <input
             type="text"
-            placeholder={libraryType === 'movie' ? t.searchMovies : t.searchTv}
+            placeholder={libraryType === 'movie' ? t.searchMovies : libraryType === 'tv' ? t.searchTv : t.searchGames}
             value={libraryQuery}
             onChange={(event) => setLibraryQuery(event.target.value)}
             className="app-input w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 pr-12 text-sm font-bold placeholder-white/30 focus:outline-none"
@@ -595,7 +625,7 @@ export default function LibraryView({
           )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+        <div className={`grid grid-cols-1 md:grid-cols-2 ${libraryType === 'game' ? 'xl:grid-cols-6' : 'xl:grid-cols-5'} gap-3`}>
           <div>
             <CustomSelect
               value={shelf}
@@ -628,6 +658,11 @@ export default function LibraryView({
               ariaLabel={t.filterReleaseLabel || t.releaseAll}
             />
           </div>
+          {libraryType === 'game' && (
+            <div>
+              <CustomSelect value={selectedPlatform} options={platformOptions} onChange={setSelectedPlatform} ariaLabel={t.gamePlatform} />
+            </div>
+          )}
           <div>
             <div className="flex w-full items-center gap-2">
               <div className="min-w-0 flex-1">
@@ -730,6 +765,7 @@ export default function LibraryView({
           </button>
         </>
       )}
+      {libraryType === 'game' && <a href="https://rawg.io" target="_blank" rel="noreferrer" className="inline-flex text-xs font-bold text-blue-300 underline underline-offset-4">{t.rawgAttribution}</a>}
     </div>
   );
 }

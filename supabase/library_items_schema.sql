@@ -6,7 +6,7 @@ create extension if not exists pgcrypto;
 create table if not exists public.library_items (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  media_type text not null check (media_type in ('movie', 'tv')),
+  media_type text not null check (media_type in ('movie', 'tv', 'game')),
   tmdb_id bigint not null check (tmdb_id > 0),
   payload jsonb not null,
   created_at timestamptz not null default now(),

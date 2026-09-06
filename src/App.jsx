@@ -12,7 +12,7 @@ import { useModalHistory } from './hooks/useModalHistory.js';
 import { useStatsSelectors } from './hooks/useStatsSelectors.js';
 import { isSupabaseConfigured, supabase } from './services/supabase.js';
 import { tmdbFetchManyJson } from './services/tmdb.js';
-import { getMovieStatuses, getTvStatuses, getStatusBadgeConfig, getTvShowStatusMap, getCrewRoleMap } from './utils/statusConfig.js';
+import { getMovieStatuses, getTvStatuses, getGameStatuses, getStatusBadgeConfig, getTvShowStatusMap, getCrewRoleMap } from './utils/statusConfig.js';
 import { isReleasedItem } from './utils/releaseUtils.js';
 import {
   buildTvWatchedEpisodesForCompletion,
@@ -30,6 +30,7 @@ const CollectionsView = lazy(() => import('./components/views/CollectionsView.js
 const StatsView = lazy(() => import('./components/views/StatsView.jsx'));
 const SettingsView = lazy(() => import('./components/views/SettingsView.jsx'));
 const DetailsModal = lazy(() => import('./components/modals/DetailsModal.jsx'));
+const GameDetailsModal = lazy(() => import('./components/modals/GameDetailsModal.jsx'));
 const PersonModal = lazy(() => import('./components/modals/PersonModal.jsx'));
 
 const APP_TABS = ['catalog', 'collections', 'library', 'stats', 'settings'];
@@ -115,6 +116,7 @@ export default function App() {
 
   const MOVIE_STATUSES = useMemo(() => getMovieStatuses(t), [t]);
   const TV_STATUSES = useMemo(() => getTvStatuses(t), [t]);
+  const GAME_STATUSES = useMemo(() => getGameStatuses(t), [t]);
   const STATUS_BADGE_CONFIG = useMemo(() => getStatusBadgeConfig(t), [t]);
   const TV_SHOW_STATUS_MAP = useMemo(() => getTvShowStatusMap(t), [t]);
   const CREW_ROLE_MAP = useMemo(() => getCrewRoleMap(t), [t]);
@@ -145,6 +147,7 @@ export default function App() {
 
   // Modal & detail state
   const [selectedItem, setSelectedItem] = useState(null);
+  const [selectedGame, setSelectedGame] = useState(null);
   const [trailerId, setTrailerId] = useState(null);
   const [ratingModal, setRatingModal] = useState(null);
   const [movieRatingModal, setMovieRatingModal] = useState(null);
@@ -284,7 +287,7 @@ export default function App() {
   });
 
   const {
-    getLibraryEntry, addToLibrary, setTvStatus,
+    getLibraryEntry, addToLibrary, setTvStatus, setGameStatus, setGameRating,
     setSeasonRating,
     removeFromLibrary, handleEpisodeClick, handleSeasonToggle,
   } = useLibrary({ library, setLibrary, setSelectedItem, selectedItemRef });
@@ -390,6 +393,7 @@ export default function App() {
     if (ratingModal) { setRatingModal(null); return; }
     if (deleteModal) { setDeleteModal(null); return; }
     if (trailerId) { setTrailerId(null); return; }
+    if (selectedGame) { setSelectedGame(null); return; }
 
     if (selectedPerson) {
       if (immediate) {
@@ -439,12 +443,14 @@ export default function App() {
     quickActions,
     ratingModal,
     selectedItem,
+    selectedGame,
     selectedPerson,
     trailerId,
   ]);
 
   const modalDepth = useMemo(() => (
     Number(Boolean(selectedItem)) +
+    Number(Boolean(selectedGame)) +
     Number(Boolean(selectedItem)) * detailsModalHistoryDepth +
     Number(Boolean(selectedPerson)) +
     Number(Boolean(trailerId)) +
@@ -458,6 +464,7 @@ export default function App() {
     quickActions,
     ratingModal,
     selectedItem,
+    selectedGame,
     detailsModalHistoryDepth,
     selectedPerson,
     trailerId,
@@ -480,10 +487,12 @@ export default function App() {
   useEffect(() => {
     if (libraryType === 'movie') {
       if (!['all', 'planned', 'completed'].includes(shelf)) setShelf('planned');
-    } else {
+    } else if (libraryType === 'tv') {
       if (!['all', 'watching', 'planned', 'completed', 'dropped'].includes(shelf)) setShelf('watching');
+    } else {
+      if (!['all', 'playing', 'planned', 'completed', 'dropped'].includes(shelf)) setShelf('playing');
     }
-  }, [libraryType]);
+  }, [libraryType, shelf]);
 
   useEffect(() => {
     if (activeTab !== 'library' || libraryShelfInitializedRef.current) return;
@@ -498,7 +507,7 @@ export default function App() {
   }, [shelf, sortBy]);
 
   useEffect(() => {
-    if (libraryType === 'movie' && sortBy === 'remainingEpisodes') {
+    if (libraryType !== 'tv' && sortBy === 'remainingEpisodes') {
       setSortBy('dateAdded');
     }
   }, [libraryType, sortBy]);
@@ -580,7 +589,7 @@ export default function App() {
   const openQuickActions = useCallback((item, x, y, options = {}) => {
     const showHideFromForYou = Boolean(options.showHideFromForYou);
     const menuWidth = 240;
-    const menuHeight = item.mediaType === 'movie' ? 300 : 390;
+    const menuHeight = item.mediaType === 'movie' ? 300 : item.mediaType === 'game' ? 410 : 390;
     const viewW = window.innerWidth;
     const viewH = window.innerHeight;
     const clampedX = Math.max(12, Math.min(x, viewW - menuWidth - 12));
@@ -589,6 +598,10 @@ export default function App() {
   }, []);
 
   const onCardClick = useCallback((item) => {
+    if (item?.mediaType === 'game') {
+      setSelectedGame(item);
+      return;
+    }
     openDetailsWithHistory(item);
   }, [openDetailsWithHistory]);
 
@@ -684,6 +697,12 @@ export default function App() {
     setQuickActions(null);
   }, [addToLibrary, getLibraryEntry, hydrateQuickAddedItemForPeopleStats, setTvStatus, triggerAddPulse]);
 
+  const applyQuickGameAction = useCallback((item, status, platform) => {
+    setGameStatus(item, status, platform);
+    triggerAddPulse(`game-${item.id}`);
+    setQuickActions(null);
+  }, [setGameStatus, triggerAddPulse]);
+
   /* Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ API calls Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ */
   const getReleaseYear = (item) => {
     const date = item.release_date || item.first_air_date || '';
@@ -693,7 +712,7 @@ export default function App() {
 
   const getLibraryModifiedAt = (item) => Number(item?.dateModified || item?.dateAdded || 0);
   const compareByDateModified = (a, b) => getLibraryModifiedAt(b) - getLibraryModifiedAt(a);
-  const compareByImdbRating = (a, b) => ((b.vote_average || 0) - (a.vote_average || 0)) || compareByDateModified(a, b);
+  const compareByImdbRating = (a, b) => (((b.mediaType === 'game' ? b.rawgRating : b.vote_average) || 0) - ((a.mediaType === 'game' ? a.rawgRating : a.vote_average) || 0)) || compareByDateModified(a, b);
   const compareByMyRating = (a, b) => ((b.rating || 0) - (a.rating || 0)) || compareByDateModified(a, b);
   const compareByReleaseYear = (a, b) => (getReleaseYear(b) - getReleaseYear(a)) || compareByDateModified(a, b);
   const getRemainingEpisodesSortValue = (item) => {
@@ -733,7 +752,7 @@ export default function App() {
 
   /* Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ Stats Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ */
   const statsLibrary = activeTab === 'stats' ? library : EMPTY_LIBRARY;
-  const { movieStats, tvStats, peopleData } = useStatsSelectors({ library: statsLibrary, peopleView });
+  const { movieStats, tvStats, gameStats, peopleData } = useStatsSelectors({ library: statsLibrary, peopleView });
 
   if (!isSupabaseConfigured || !supabase) {
     return (
@@ -856,7 +875,7 @@ export default function App() {
           shelf={shelf} setShelf={setShelf}
           sortBy={sortBy} setSortBy={setSortBy}
           sortDirection={sortDirection} setSortDirection={setSortDirection}
-          MOVIE_STATUSES={MOVIE_STATUSES} TV_STATUSES={TV_STATUSES}
+          MOVIE_STATUSES={MOVIE_STATUSES} TV_STATUSES={TV_STATUSES} GAME_STATUSES={GAME_STATUSES}
           lang={lang}
           t={t}
           onCardClick={onCardClick}
@@ -871,12 +890,12 @@ export default function App() {
       {activeTab === 'stats' && (
         <div className="tab-enter" key="tab-stats">
         <StatsView
-          movieStats={movieStats} tvStats={tvStats} peopleData={peopleData}
+          movieStats={movieStats} tvStats={tvStats} gameStats={gameStats} peopleData={peopleData}
           t={t}
           statsView={statsView} setStatsView={setStatsView}
           peopleView={peopleView} setPeopleView={setPeopleView}
           getPersonDetails={getPersonDetails}
-          getFullDetails={openDetailsWithHistory}
+          getFullDetails={onCardClick}
           openQuickActions={openQuickActions}
         />
         </div>
@@ -962,13 +981,28 @@ export default function App() {
       />
       </Suspense>}
 
+      {selectedGame && <Suspense fallback={null}>
+        <GameDetailsModal
+          game={selectedGame}
+          onClose={() => setSelectedGame(null)}
+          t={t}
+          GAME_STATUSES={GAME_STATUSES}
+          getLibraryEntry={getLibraryEntry}
+          setGameStatus={setGameStatus}
+          setGameRating={setGameRating}
+          removeFromLibrary={removeFromLibrary}
+          triggerAddPulse={triggerAddPulse}
+        />
+      </Suspense>}
+
       {/* QUICK ACTIONS */}
       <QuickActionsMenu
         quickActions={quickActions} setQuickActions={setQuickActions}
-        t={t} TV_STATUSES={TV_STATUSES}
+        t={t} TV_STATUSES={TV_STATUSES} GAME_STATUSES={GAME_STATUSES}
         getLibraryEntry={getLibraryEntry}
         applyQuickMovieAction={applyQuickMovieAction}
         applyQuickTvAction={applyQuickTvAction}
+        applyQuickGameAction={applyQuickGameAction}
         hideFromForYouRecommendations={hideFromForYouRecommendations}
         removeFromLibrary={removeFromLibrary}
       />

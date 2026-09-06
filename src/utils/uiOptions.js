@@ -1,8 +1,15 @@
-export const getCatalogSortOptions = (t, mediaType) => ([
-  { value: 'popularity.desc', label: t.popular },
-  { value: 'vote_average.desc', label: t.rating },
-  { value: mediaType === 'movie' ? 'primary_release_date.desc' : 'first_air_date.desc', label: t.newest },
-]);
+export const getCatalogSortOptions = (t, mediaType) => (mediaType === 'game'
+  ? [
+      { value: '-added', label: t.popular },
+      { value: '-rating', label: t.rating },
+      { value: '-metacritic', label: t.gameMetacritic || 'Metacritic' },
+      { value: '-released', label: t.newest },
+    ]
+  : [
+      { value: 'popularity.desc', label: t.popular },
+      { value: 'vote_average.desc', label: t.rating },
+      { value: mediaType === 'movie' ? 'primary_release_date.desc' : 'first_air_date.desc', label: t.newest },
+    ]);
 
 export const getReleaseFilterOptions = (t) => ([
   { value: 'all', label: t.releaseAll },

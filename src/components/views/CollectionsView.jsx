@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CustomSelect, LazyImg, SegmentedControl } from '../ui.jsx';
+import GameRecommendationsPanel from './GameRecommendationsPanel.jsx';
 import { IMG_500 } from '../../constants/appConstants.js';
 import { getYear } from '../../utils/appUtils.js';
 import { tmdbFetchJson } from '../../services/tmdb.js';
@@ -257,7 +258,8 @@ export default function CollectionsView({
   const collectionsSections = useMemo(() => ([
     { id: 'forYou', label: t.collectionsForYouTab },
     { id: 'curated', label: t.collections },
-  ]), [t.collections, t.collectionsForYouTab]);
+    { id: 'games', label: t.games },
+  ]), [t.collections, t.collectionsForYouTab, t.games]);
   const curatedVisibilityOptions = useMemo(() => ([
     { value: 'public', label: t.collectionsFilterPublic || t.collectionsVisibilityPublic },
     { value: 'personal', label: t.collectionsFilterPersonal || t.collectionsVisibilityPrivate },
@@ -1355,6 +1357,17 @@ export default function CollectionsView({
         activeId={collectionsSection}
         onChange={setCollectionsSection}
       />
+
+      {collectionsSection === 'games' && (
+        <GameRecommendationsPanel
+          library={library}
+          getLibraryEntry={getLibraryEntry}
+          onCardClick={onCardClick}
+          openQuickActions={openQuickActions}
+          STATUS_BADGE_CONFIG={STATUS_BADGE_CONFIG}
+          t={t}
+        />
+      )}
 
       {collectionsSection === 'curated' && (
         <>

@@ -269,6 +269,39 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
     setLibrary(prev => prev.filter(x => !(x.mediaType === mType && x.id === itemId)));
   }, [setLibrary]);
 
+  const setGameStatus = useCallback((item, status, platform = '') => {
+    if (!item?.id || item.mediaType !== 'game') return;
+    const changedAt = Date.now();
+    setLibrary((prev) => {
+      const existing = prev.find((entry) => entry.mediaType === 'game' && entry.id === item.id);
+      if (!existing) {
+        return [...prev, {
+          ...item,
+          mediaType: 'game',
+          status,
+          platform,
+          rating: 0,
+          dateAdded: changedAt,
+          dateModified: changedAt,
+        }];
+      }
+      return prev.map((entry) => (
+        entry.mediaType === 'game' && entry.id === item.id
+          ? applyModificationTimestamp({ ...entry, ...item, status, rating: entry.rating || 0, platform: platform || entry.platform || '' }, changedAt)
+          : entry
+      ));
+    });
+  }, [setLibrary]);
+
+  const setGameRating = useCallback((gameId, ratingVal) => {
+    const changedAt = Date.now();
+    setLibrary((prev) => prev.map((entry) => (
+      entry.mediaType === 'game' && entry.id === gameId
+        ? applyModificationTimestamp({ ...entry, rating: Math.max(0, Math.min(10, Number(ratingVal) || 0)) }, changedAt)
+        : entry
+    )));
+  }, [setLibrary]);
+
   const handleEpisodeClick = useCallback((tvId, seasonNum, epNum) => {
     const libEntry = getLibraryEntry('tv', tvId);
     if (libEntry) {
@@ -325,6 +358,8 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
     toggleEpisodeWatched,
     toggleSeasonWatched,
     setSeasonRating,
+    setGameStatus,
+    setGameRating,
     removeFromLibrary,
     handleEpisodeClick,
     handleSeasonToggle,

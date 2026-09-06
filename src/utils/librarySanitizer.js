@@ -2,6 +2,7 @@ import { isFutureReleaseDate } from './releaseUtils.js';
 
 const MOVIE_STATUSES = new Set(['planned', 'completed']);
 const TV_STATUSES = new Set(['watching', 'planned', 'completed', 'dropped']);
+const GAME_STATUSES = new Set(['planned', 'playing', 'completed', 'dropped']);
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
@@ -146,8 +147,42 @@ const stripHeavyFields = (entry) => {
 
 export const sanitizeLibraryEntry = (entry) => {
   if (!isObject(entry)) return null;
-  const mediaType = entry.mediaType === 'tv' ? 'tv' : entry.mediaType === 'movie' ? 'movie' : null;
+  const mediaType = ['movie', 'tv', 'game'].includes(entry.mediaType) ? entry.mediaType : null;
   if (!mediaType || !entry.id) return null;
+
+  if (mediaType === 'game') {
+    const dateAdded = normalizeDateAdded(entry.dateAdded);
+    const status = GAME_STATUSES.has(entry.status) ? entry.status : 'planned';
+    const platform = typeof entry.platform === 'string' ? entry.platform.trim() : '';
+    const normalizePlatforms = (list) => (Array.isArray(list) ? list : [])
+      .map((item) => item?.platform || item)
+      .map((item) => {
+        const id = Number(item?.id);
+        if (!Number.isFinite(id) || !item?.name) return null;
+        return { id, name: String(item.name), slug: String(item.slug || '') };
+      })
+      .filter(Boolean)
+      .slice(0, 30);
+    return {
+      id: Number(entry.id),
+      mediaType,
+      name: String(entry.name || entry.title || ''),
+      slug: String(entry.slug || ''),
+      release_date: typeof entry.release_date === 'string' ? entry.release_date : '',
+      posterUrl: typeof entry.posterUrl === 'string' ? entry.posterUrl : null,
+      rawgRating: Math.max(0, Number(entry.rawgRating) || 0),
+      metacritic: Math.max(0, Number(entry.metacritic) || 0),
+      status,
+      rating: clampRating(entry.rating),
+      platform,
+      genres: normalizeGenres(entry.genres),
+      platforms: normalizePlatforms(entry.platforms),
+      parentPlatforms: normalizePlatforms(entry.parentPlatforms),
+      playtime: Math.max(0, Number(entry.playtime) || 0),
+      dateAdded,
+      dateModified: normalizeDateModified(entry.dateModified, dateAdded),
+    };
+  }
 
   if (mediaType === 'movie') {
     let status = MOVIE_STATUSES.has(entry.status) ? entry.status : 'planned';

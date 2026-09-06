@@ -12,6 +12,7 @@ const CatalogCard = React.memo(function CatalogCard({
 }) {
   const badge = libEntry && STATUS_BADGE_CONFIG[libEntry.status];
   const year = getYear(item);
+  const isGame = item.mediaType === 'game';
   const genre = (item.genre_ids?.length > 0 || item.genres?.length > 0)
     ? (item.genres?.[0]?.name || '')
     : '';
@@ -28,8 +29,8 @@ const CatalogCard = React.memo(function CatalogCard({
     >
       <div className="media-poster">
         <LazyImg
-          src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'}
-          srcSet={item.poster_path ? [185, 342, 500].map((width) => (
+          src={isGame ? (item.posterUrl || '/poster-placeholder.svg') : (item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg')}
+          srcSet={!isGame && item.poster_path ? [185, 342, 500].map((width) => (
             `https://image.tmdb.org/t/p/w${width}${item.poster_path} ${width}w`
           )).join(', ') : undefined}
           sizes="(min-width: 1180px) 212px, (min-width: 1024px) calc(20vw - 24px), (min-width: 768px) calc(25vw - 26px), calc(50vw - 26px)"
@@ -41,7 +42,7 @@ const CatalogCard = React.memo(function CatalogCard({
         />
         {badge && (
           <div className="media-pill absolute top-2 right-2 text-white uppercase flex items-center gap-1 shadow-lg" style={{ background: badge.bg }}>
-            <span>{badge.icon}</span><span>{badge.label}</span>
+            <span>{badge.icon}</span><span>{item.mediaType === 'game' && libEntry.status === 'completed' ? t.gameCompleted : badge.label}</span>
           </div>
         )}
         <button
@@ -59,7 +60,9 @@ const CatalogCard = React.memo(function CatalogCard({
           </svg>
         </button>
         <div className="card-info-overlay">
-          {item.vote_average > 0 && <p className="text-xs font-bold mb-0.5">{"\u2605"} {item.vote_average.toFixed(1)}</p>}
+          {isGame && item.metacritic > 0 && <p className="text-xs font-bold mb-0.5">MC {item.metacritic}</p>}
+          {isGame && !item.metacritic && item.rawgRating > 0 && <p className="text-xs font-bold mb-0.5">{'\u2605'} {item.rawgRating.toFixed(1)}/5</p>}
+          {!isGame && item.vote_average > 0 && <p className="text-xs font-bold mb-0.5">{"\u2605"} {item.vote_average.toFixed(1)}</p>}
           {genre && <p className="text-[10px] font-medium opacity-80">{genre}</p>}
           {year && <p className="text-[10px] font-normal opacity-60">{year}</p>}
         </div>
@@ -76,10 +79,12 @@ export default function CatalogView({
   query, setQuery,
   selectedGenre, setSelectedGenre,
   selectedYear, setSelectedYear,
+  selectedPlatform, setSelectedPlatform,
   selectedReleaseFilter, setSelectedReleaseFilter,
   catalogSort, setCatalogSort,
   catalogLibraryFilter, setCatalogLibraryFilter,
   genres,
+  platforms,
   catalogItems,
   setPage,
   hasMore,
@@ -108,6 +113,10 @@ export default function CatalogView({
   const yearOptions = [
     { value: '', label: t.filterYearLabel || t.allYears },
     ...YEARS.map((year) => ({ value: String(year), label: String(year) })),
+  ];
+  const platformOptions = [
+    { value: '', label: t.allPlatforms },
+    ...platforms.map((platform) => ({ value: String(platform.id), label: platform.name })),
   ];
 
   const catalogSortOptions = CATALOG_SORT_OPTIONS.map((option) => ({
@@ -149,7 +158,7 @@ export default function CatalogView({
   React.useEffect(() => {
     autoFillSignatureRef.current = '';
     setRequestedPageCount(1);
-  }, [mediaType, query, selectedGenre, selectedYear, selectedReleaseFilter, catalogSort]);
+  }, [mediaType, query, selectedGenre, selectedYear, selectedPlatform, selectedReleaseFilter, catalogSort]);
 
   React.useEffect(() => {
     if (catalogLibraryFilter !== 'hideAdded') return;
@@ -197,8 +206,9 @@ export default function CatalogView({
     setQuery('');
     setSelectedGenre('');
     setSelectedYear('');
+    setSelectedPlatform('');
     setSelectedReleaseFilter('all');
-    setCatalogSort('popularity.desc');
+    setCatalogSort(mediaType === 'game' ? '-added' : 'popularity.desc');
     setRequestedPageCount(1);
     setCatalogLibraryFilter('all');
     setPage(1);
@@ -223,6 +233,13 @@ export default function CatalogView({
           >
             {t.tvShows}
           </button>
+          <button
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setMediaType('game')}
+            className={`app-switch-btn ${mediaType === 'game' ? 'active' : ''}`}
+          >
+            {t.games}
+          </button>
         </div>
       </div>
 
@@ -230,7 +247,7 @@ export default function CatalogView({
         <div className="relative">
           <input
             type="text"
-            placeholder={mediaType === 'movie' ? t.searchMovies : t.searchTv}
+            placeholder={mediaType === 'movie' ? t.searchMovies : mediaType === 'tv' ? t.searchTv : t.searchGames}
             value={query}
             onChange={e => { setQuery(e.target.value); setPage(1); }}
             className="app-input w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 pr-12 text-sm font-bold placeholder-white/30 focus:outline-none"
@@ -248,7 +265,7 @@ export default function CatalogView({
           )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+        <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 ${mediaType === 'game' ? 'xl:grid-cols-6' : 'xl:grid-cols-5'} gap-3`}>
           <div>
             <CustomSelect
               value={catalogLibraryFilter}
@@ -273,6 +290,16 @@ export default function CatalogView({
               ariaLabel={t.filterYearLabel || t.allYears}
             />
           </div>
+          {mediaType === 'game' && (
+            <div>
+              <CustomSelect
+                value={selectedPlatform}
+                options={platformOptions}
+                onChange={(nextValue) => { setSelectedPlatform(nextValue); setPage(1); }}
+                ariaLabel={t.gamePlatform}
+              />
+            </div>
+          )}
           <div>
             <CustomSelect
               value={selectedReleaseFilter}
@@ -354,6 +381,7 @@ export default function CatalogView({
           </button>
         </>
       )}
+      {mediaType === 'game' && <a href="https://rawg.io" target="_blank" rel="noreferrer" className="inline-flex text-xs font-bold text-blue-300 underline underline-offset-4">{t.rawgAttribution}</a>}
     </div>
   );
 }
