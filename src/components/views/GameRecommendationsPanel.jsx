@@ -63,7 +63,7 @@ export default function GameRecommendationsPanel({ library, getLibraryEntry, onC
                 <LazyImg src={game.posterUrl || '/poster-placeholder.svg'} className="w-full aspect-[2/3] object-cover transition-transform duration-300 group-hover:scale-[1.04]" alt={game.name} />
                 {badge && <div className="media-pill absolute top-2 right-2 text-white uppercase flex items-center gap-1 shadow-lg" style={{ background: badge.bg }}><span>{badge.icon}</span><span>{entry.status === 'completed' ? t.gameCompleted : badge.label}</span></div>}
                 <button type="button" onClick={(event) => { event.stopPropagation(); openQuickActions(game, event.clientX, event.clientY); }} className="quick-action-trigger" aria-label={t.quickActions}><svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg></button>
-                <div className="card-info-overlay">{game.metacritic > 0 && <p className="text-xs font-bold">MC {game.metacritic}</p>}<p className="text-[10px] opacity-70">{game.release_date?.slice(0, 4)}</p></div>
+                <div className="card-info-overlay">{game.rawgRating > 0 && <p className="text-xs font-bold">★ {game.rawgRating.toFixed(1)}/5</p>}<p className="text-[10px] opacity-70">{game.release_date?.slice(0, 4)}</p></div>
               </div>
               <h3 className="media-title line-clamp-2">{game.name}</h3>
               <p className="media-meta">{game.release_date?.slice(0, 4)}</p>

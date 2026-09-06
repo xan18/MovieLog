@@ -60,8 +60,7 @@ const CatalogCard = React.memo(function CatalogCard({
           </svg>
         </button>
         <div className="card-info-overlay">
-          {isGame && item.metacritic > 0 && <p className="text-xs font-bold mb-0.5">MC {item.metacritic}</p>}
-          {isGame && !item.metacritic && item.rawgRating > 0 && <p className="text-xs font-bold mb-0.5">{'\u2605'} {item.rawgRating.toFixed(1)}/5</p>}
+          {isGame && item.rawgRating > 0 && <p className="text-xs font-bold mb-0.5">{'\u2605'} {item.rawgRating.toFixed(1)}/5</p>}
           {!isGame && item.vote_average > 0 && <p className="text-xs font-bold mb-0.5">{"\u2605"} {item.vote_average.toFixed(1)}</p>}
           {genre && <p className="text-[10px] font-medium opacity-80">{genre}</p>}
           {year && <p className="text-[10px] font-normal opacity-60">{year}</p>}

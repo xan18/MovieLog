@@ -151,6 +151,7 @@ export default function App() {
   const [trailerId, setTrailerId] = useState(null);
   const [ratingModal, setRatingModal] = useState(null);
   const [movieRatingModal, setMovieRatingModal] = useState(null);
+  const [gameRatingModal, setGameRatingModal] = useState(null);
   const [deleteModal, setDeleteModal] = useState(null);
   const [selectedPerson, setSelectedPerson] = useState(null);
   const [seasonEpisodes, setSeasonEpisodes] = useState({});
@@ -390,6 +391,7 @@ export default function App() {
   const closeTopModal = useCallback((immediate = false) => {
     if (quickActions) { setQuickActions(null); return; }
     if (movieRatingModal) { setMovieRatingModal(null); return; }
+    if (gameRatingModal) { setGameRatingModal(null); return; }
     if (ratingModal) { setRatingModal(null); return; }
     if (deleteModal) { setDeleteModal(null); return; }
     if (trailerId) { setTrailerId(null); return; }
@@ -440,6 +442,7 @@ export default function App() {
     openDetailsWithHistory,
     syncDetailsHistoryDepth,
     movieRatingModal,
+    gameRatingModal,
     quickActions,
     ratingModal,
     selectedItem,
@@ -457,10 +460,12 @@ export default function App() {
     Number(Boolean(deleteModal)) +
     Number(Boolean(ratingModal)) +
     Number(Boolean(movieRatingModal)) +
+    Number(Boolean(gameRatingModal)) +
     Number(Boolean(quickActions))
   ), [
     deleteModal,
     movieRatingModal,
+    gameRatingModal,
     quickActions,
     ratingModal,
     selectedItem,
@@ -700,8 +705,12 @@ export default function App() {
   const applyQuickGameAction = useCallback((item, status, platform) => {
     setGameStatus(item, status, platform);
     triggerAddPulse(`game-${item.id}`);
+    if (status === 'completed') {
+      const entry = getLibraryEntry('game', item.id);
+      setGameRatingModal({ gameId: item.id, currentRating: entry?.rating || 0, item });
+    }
     setQuickActions(null);
-  }, [setGameStatus, triggerAddPulse]);
+  }, [getLibraryEntry, setGameStatus, triggerAddPulse]);
 
   /* Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ API calls Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ */
   const getReleaseYear = (item) => {
@@ -985,12 +994,13 @@ export default function App() {
         <GameDetailsModal
           game={selectedGame}
           onClose={() => setSelectedGame(null)}
+          onOpenGame={setSelectedGame}
           t={t}
           GAME_STATUSES={GAME_STATUSES}
           getLibraryEntry={getLibraryEntry}
           setGameStatus={setGameStatus}
-          setGameRating={setGameRating}
-          removeFromLibrary={removeFromLibrary}
+          setGameRatingModal={setGameRatingModal}
+          setDeleteModal={setDeleteModal}
           triggerAddPulse={triggerAddPulse}
         />
       </Suspense>}
@@ -1179,6 +1189,29 @@ export default function App() {
         />
       )}
 
+      {gameRatingModal && (
+        <RatingModal
+          title={t.rateGameTitle}
+          subtitle={t.chooseRating}
+          removeLabel={gameRatingModal.currentRating > 0 ? t.removeRating : t.leaveUnrated}
+          cancelLabel={t.cancel}
+          confirmLabel={t.confirmRating}
+          currentRating={gameRatingModal.currentRating}
+          onRate={(rating) => {
+            const contextItem = gameRatingModal.item || selectedGame;
+            if (!contextItem) { setGameRatingModal(null); return; }
+            if (!getLibraryEntry('game', gameRatingModal.gameId)) setGameStatus(contextItem, 'planned', '');
+            setGameRating(gameRatingModal.gameId, rating);
+            setGameRatingModal(null);
+          }}
+          onRemove={() => {
+            setGameRating(gameRatingModal.gameId, 0);
+            setGameRatingModal(null);
+          }}
+          onClose={() => setGameRatingModal(null)}
+        />
+      )}
+
       {/* DELETE MODAL */}
       {deleteModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 p-4" onClick={() => setDeleteModal(null)}>
@@ -1187,10 +1220,10 @@ export default function App() {
               <div className="text-5xl mb-4">{'\u26A0\uFE0F'}</div>
               <h3 className="text-2xl font-black mb-3">{t.deleteConfirmTitle}</h3>
               <p className="text-sm opacity-80 mb-2">{deleteModal.title}</p>
-              <p className="text-xs opacity-60">{deleteModal.mediaType === 'tv' ? t.deleteConfirmTv : t.deleteConfirmMovie}</p>
+              <p className="text-xs opacity-60">{deleteModal.mediaType === 'tv' ? t.deleteConfirmTv : deleteModal.mediaType === 'game' ? t.deleteConfirmGame : t.deleteConfirmMovie}</p>
             </div>
             <div className="flex gap-3">
-              <button onClick={() => { removeFromLibrary(deleteModal.mediaType, deleteModal.id); setSelectedItem(null); setDeleteModal(null); }}
+              <button onClick={() => { removeFromLibrary(deleteModal.mediaType, deleteModal.id); setSelectedItem(null); setSelectedGame(null); setDeleteModal(null); }}
                 className="flex-1 py-4 bg-red-600 hover:bg-red-500 rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-lg active:scale-95">{t.delete}</button>
               <button onClick={() => setDeleteModal(null)}
                 className="flex-1 py-4 bg-white/10 hover:bg-white/15 border border-white/20 rounded-2xl font-black text-sm uppercase tracking-widest transition-all active:scale-95">{t.cancel}</button>

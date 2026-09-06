@@ -154,7 +154,7 @@ const LibraryCard = React.memo(function LibraryCard({
           </svg>
         </button>
         <div className="card-info-overlay">
-          {isGame && item.metacritic > 0 && <p className="text-xs font-bold mb-0.5">MC {item.metacritic}</p>}
+          {isGame && item.rawgRating > 0 && <p className="text-xs font-bold mb-0.5">{'\u2605'} {item.rawgRating.toFixed(1)}/5</p>}
           {!isGame && item.vote_average > 0 && <p className="text-xs font-bold mb-0.5">{'\u2605'} {item.vote_average.toFixed(1)}</p>}
           <p className="text-[10px] font-normal opacity-70">{getYear(item)}</p>
         </div>

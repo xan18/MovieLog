@@ -6,7 +6,7 @@ function GameQuickActions({ item, t, GAME_STATUSES, existing, applyQuickGameActi
     ...(item.parentPlatforms || []).map((entry) => entry?.name),
     ...(item.platforms || []).map((entry) => entry?.name || entry?.platform?.name),
   ].filter(Boolean)));
-  const [platform, setPlatform] = React.useState(existing?.platform || platformNames[0] || '');
+  const [platform, setPlatform] = React.useState(existing?.platform || '');
 
   return (
     <div className="space-y-2">
@@ -15,7 +15,7 @@ function GameQuickActions({ item, t, GAME_STATUSES, existing, applyQuickGameActi
         {platformNames.map((name) => <option key={name} value={name}>{name}</option>)}
       </select>
       {GAME_STATUSES.map((status) => (
-        <button key={status.id} disabled={!platform} onClick={() => applyQuickGameAction(item, status.id, platform)} className="w-full text-left px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold uppercase tracking-wide disabled:opacity-40">
+        <button key={status.id} disabled={status.id !== 'planned' && !platform} onClick={() => applyQuickGameAction(item, status.id, status.id === 'planned' ? '' : platform)} className="w-full text-left px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold uppercase tracking-wide disabled:opacity-40">
           {status.label}
         </button>
       ))}

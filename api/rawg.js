@@ -4,6 +4,7 @@ const ALLOWED_RESOURCES = [
   /^games$/,
   /^games\/\d+$/,
   /^games\/\d+\/suggested$/,
+  /^games\/\d+\/game-series$/,
   /^genres$/,
   /^platforms$/,
   /^platforms\/lists\/parents$/,
