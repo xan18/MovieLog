@@ -2667,7 +2667,8 @@ html, body { overflow-x: hidden; }
       to { opacity: 1; transform: translateY(0) scale(1); }
     }
     .card-stagger {
-      animation: cardReveal 0.28s ease-out both;
+      /* Release the transform/compositing layer when the entrance finishes. */
+      animation: cardReveal 0.28s ease-out backwards;
       animation-delay: calc(min(var(--stagger-i, 0), 8) * 18ms);
     }
 
@@ -3365,5 +3366,47 @@ html, body { overflow-x: hidden; }
     border-color: rgba(15, 23, 42, 0.18);
     background: rgba(255, 255, 255, 0.85);
     color: rgba(30, 41, 59, 0.95);
+  }
+}
+
+/* Touch scrolling should not continually composite blurred poster badges and
+   the full-width navigation over the moving grid, especially on tablets. */
+@media (max-width: 1024px), (hover: none), (pointer: coarse) {
+  .theme-dark { --touch-nav-bg: #1f1f1f; }
+  .theme-night { --touch-nav-bg: #0f172a; }
+  .theme-black { --touch-nav-bg: #000; }
+  .theme-light { --touch-nav-bg: #f1f5f9; }
+
+  .app-shell .app-topbar,
+  .app-shell .mobile-bottom-nav {
+    backdrop-filter: none;
+    background: var(--touch-nav-bg, #0f172a);
+  }
+
+  .app-shell .glass,
+  .settings-section-head,
+  .ctrl-select-menu,
+  .scroll-top-btn,
+  .collections-modal-backdrop,
+  .details-overlay,
+  .details-surface,
+  .details-close,
+  .details-meta-chip,
+  .details-tabs {
+    backdrop-filter: none;
+  }
+
+  .media-pill,
+  .quick-action-trigger {
+    backdrop-filter: none;
+  }
+
+  .media-card.card-stagger {
+    animation: none;
+  }
+
+  .media-card:hover,
+  .media-card:hover .media-poster > img {
+    transform: none;
   }
 }

@@ -5,6 +5,71 @@ import { IMG_500 } from '../../constants/appConstants.js';
 import { useQuickActionGesture } from '../../hooks/useQuickActionGesture.js';
 import { useAutoLoadMoreOnScroll } from '../../hooks/useAutoLoadMoreOnScroll.js';
 
+const CatalogCard = React.memo(function CatalogCard({
+  item, index, libEntry, isPulsing, t, STATUS_BADGE_CONFIG,
+  onCardClick, openQuickActions,
+  onContextMenu, onTouchStart, onTouchMove, onTouchEnd, onTouchCancel,
+}) {
+  const badge = libEntry && STATUS_BADGE_CONFIG[libEntry.status];
+  const year = getYear(item);
+  const genre = (item.genre_ids?.length > 0 || item.genres?.length > 0)
+    ? (item.genres?.[0]?.name || '')
+    : '';
+  return (
+    <div
+      onClick={() => onCardClick(item)}
+      onContextMenu={(event) => onContextMenu(event, item)}
+      onTouchStart={(event) => onTouchStart(event, item)}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchCancel}
+      className={`media-card group cursor-pointer card-stagger ${isPulsing ? 'add-pulse' : ''}`}
+      style={{ '--stagger-i': index }}
+    >
+      <div className="media-poster">
+        <LazyImg
+          src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'}
+          srcSet={item.poster_path ? [185, 342, 500].map((width) => (
+            `https://image.tmdb.org/t/p/w${width}${item.poster_path} ${width}w`
+          )).join(', ') : undefined}
+          sizes="(min-width: 1180px) 212px, (min-width: 1024px) calc(20vw - 24px), (min-width: 768px) calc(25vw - 26px), calc(50vw - 26px)"
+          width={500}
+          height={750}
+          loading={index < 4 ? 'eager' : 'lazy'}
+          className="w-full aspect-[2/3] object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+          alt={item.title || item.name}
+        />
+        {badge && (
+          <div className="media-pill absolute top-2 right-2 text-white uppercase flex items-center gap-1 shadow-lg" style={{ background: badge.bg }}>
+            <span>{badge.icon}</span><span>{badge.label}</span>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            openQuickActions(item, e.clientX, e.clientY);
+          }}
+          className="quick-action-trigger"
+          aria-label={t.quickActions}
+          title={t.quickActions}
+        >
+          <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
+        <div className="card-info-overlay">
+          {item.vote_average > 0 && <p className="text-xs font-bold mb-0.5">{"\u2605"} {item.vote_average.toFixed(1)}</p>}
+          {genre && <p className="text-[10px] font-medium opacity-80">{genre}</p>}
+          {year && <p className="text-[10px] font-normal opacity-60">{year}</p>}
+        </div>
+      </div>
+      <h3 className="media-title line-clamp-2">{item.title || item.name}</h3>
+      <p className="media-meta">{year}</p>
+    </div>
+  );
+});
+
 export default function CatalogView({
   // from useCatalog
   mediaType, setMediaType,
@@ -76,10 +141,10 @@ export default function CatalogView({
     consumeLongPress,
   } = useQuickActionGesture(openQuickActions);
 
-  const handleCardClick = (item) => {
+  const handleCardClick = React.useCallback((item) => {
     if (consumeLongPress()) return;
     onCardClick(item);
-  };
+  }, [consumeLongPress, onCardClick]);
 
   React.useEffect(() => {
     autoFillSignatureRef.current = '';
@@ -242,59 +307,24 @@ export default function CatalogView({
           </div>
         ))}
 
-        {!showInitialSkeleton && visibleCatalogItems.map((item, i) => {
-          const libEntry = getLibraryEntry(item.mediaType, item.id);
-          const badge = libEntry && STATUS_BADGE_CONFIG[libEntry.status];
-          const cardKey = `${item.mediaType}-${item.id}`;
-          const isPulsing = addPulseId === cardKey;
-          const year = getYear(item);
-          const genre = (item.genre_ids?.length > 0 || item.genres?.length > 0)
-            ? (item.genres?.[0]?.name || '')
-            : '';
-          return (
-            <div
-              key={cardKey}
-              onClick={() => handleCardClick(item)}
-              onContextMenu={(event) => onContextMenu(event, item)}
-              onTouchStart={(event) => onTouchStart(event, item)}
-              onTouchMove={onTouchMove}
-              onTouchEnd={onTouchEnd}
-              onTouchCancel={onTouchCancel}
-              className={`media-card group cursor-pointer card-stagger ${isPulsing ? 'add-pulse' : ''}`}
-              style={{ '--stagger-i': i }}
-            >
-              <div className="media-poster">
-                <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'} className="w-full aspect-[2/3] object-cover transition-transform duration-300 group-hover:scale-[1.04]" alt={item.title || item.name} />
-                {badge && (
-                  <div className="media-pill absolute top-2 right-2 text-white uppercase flex items-center gap-1 shadow-lg" style={{ background: badge.bg }}>
-                    <span>{badge.icon}</span><span>{badge.label}</span>
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openQuickActions(item, e.clientX, e.clientY);
-                  }}
-                  className="quick-action-trigger"
-                  aria-label={t.quickActions}
-                  title={t.quickActions}
-                >
-                  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden="true">
-                    <path d="M12 5v14M5 12h14" />
-                  </svg>
-                </button>
-                <div className="card-info-overlay">
-                  {item.vote_average > 0 && <p className="text-xs font-bold mb-0.5">{"\u2605"} {item.vote_average.toFixed(1)}</p>}
-                  {genre && <p className="text-[10px] font-medium opacity-80">{genre}</p>}
-                  {year && <p className="text-[10px] font-normal opacity-60">{year}</p>}
-                </div>
-              </div>
-              <h3 className="media-title line-clamp-2">{item.title || item.name}</h3>
-              <p className="media-meta">{year}</p>
-            </div>
-          );
-        })}
+        {!showInitialSkeleton && visibleCatalogItems.map((item, index) => (
+          <CatalogCard
+            key={`${item.mediaType}-${item.id}`}
+            item={item}
+            index={index}
+            libEntry={getLibraryEntry(item.mediaType, item.id)}
+            isPulsing={addPulseId === `${item.mediaType}-${item.id}`}
+            t={t}
+            STATUS_BADGE_CONFIG={STATUS_BADGE_CONFIG}
+            onCardClick={handleCardClick}
+            openQuickActions={openQuickActions}
+            onContextMenu={onContextMenu}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+            onTouchCancel={onTouchCancel}
+          />
+        ))}
       </div>
 
       {!catalogError && !isCatalogLoading && visibleCatalogItems.length === 0 && (

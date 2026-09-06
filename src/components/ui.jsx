@@ -206,6 +206,16 @@ export const RatingModal = React.memo(({
   );
 });
 
-export const LazyImg = React.memo(({ src, alt, className }) => (
-  <img loading="lazy" src={src} alt={alt || ''} className={className} />
+export const LazyImg = React.memo(({ src, alt, className, srcSet, sizes, width, height, loading = 'lazy' }) => (
+  <img
+    loading={loading}
+    decoding="async"
+    src={src}
+    srcSet={srcSet}
+    sizes={sizes}
+    width={width}
+    height={height}
+    alt={alt || ''}
+    className={className}
+  />
 ));

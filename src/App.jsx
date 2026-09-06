@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { RatingModal } from './components/ui.jsx';
-import { useDebouncedStorageState } from './hooks/useDebouncedStorageState.js';
 import { useAppSettings } from './hooks/useAppSettings.js';
 import { useCatalog } from './hooks/useCatalog.js';
 import { useLibrary } from './hooks/useLibrary.js';
@@ -15,24 +14,23 @@ import { isSupabaseConfigured, supabase } from './services/supabase.js';
 import { tmdbFetchManyJson } from './services/tmdb.js';
 import { getMovieStatuses, getTvStatuses, getStatusBadgeConfig, getTvShowStatusMap, getCrewRoleMap } from './utils/statusConfig.js';
 import { isReleasedItem } from './utils/releaseUtils.js';
-import { sanitizeLibraryData } from './utils/librarySanitizer.js';
 import {
   buildTvWatchedEpisodesForCompletion,
   getTvProgressSnapshot,
   resolveTvProgressStatus,
 } from './utils/tvStatusUtils.js';
-import { STORAGE_KEY } from './constants/appConstants.js';
 import { I18N } from './i18n/translations.js';
 
-import CatalogView from './components/views/CatalogView.jsx';
 import LibraryView from './components/views/LibraryView.jsx';
-import CollectionsView from './components/views/CollectionsView.jsx';
-import StatsView from './components/views/StatsView.jsx';
-import SettingsView from './components/views/SettingsView.jsx';
 import AuthView from './components/views/AuthView.jsx';
-import DetailsModal from './components/modals/DetailsModal.jsx';
 import QuickActionsMenu from './components/modals/QuickActionsMenu.jsx';
-import PersonModal from './components/modals/PersonModal.jsx';
+
+const CatalogView = lazy(() => import('./components/views/CatalogView.jsx'));
+const CollectionsView = lazy(() => import('./components/views/CollectionsView.jsx'));
+const StatsView = lazy(() => import('./components/views/StatsView.jsx'));
+const SettingsView = lazy(() => import('./components/views/SettingsView.jsx'));
+const DetailsModal = lazy(() => import('./components/modals/DetailsModal.jsx'));
+const PersonModal = lazy(() => import('./components/modals/PersonModal.jsx'));
 
 const APP_TABS = ['catalog', 'collections', 'library', 'stats', 'settings'];
 const APP_TAB_SET = new Set(APP_TABS);
@@ -121,12 +119,8 @@ export default function App() {
   const TV_SHOW_STATUS_MAP = useMemo(() => getTvShowStatusMap(t), [t]);
   const CREW_ROLE_MAP = useMemo(() => getCrewRoleMap(t), [t]);
 
-  const [library, setLibrary] = useDebouncedStorageState(STORAGE_KEY, [], {
-    debounceMs: 2000,
-    hydrateOnInit: false,
-    serialize: (value) => JSON.stringify(sanitizeLibraryData(value)),
-    normalize: sanitizeLibraryData,
-  });
+  // useCloudLibrarySync owns persistence in a cache scoped to the signed-in user.
+  const [library, setLibrary] = useState([]);
   const [globalError, setGlobalError] = useState('');
 
   // Navigation & UI state
@@ -284,7 +278,10 @@ export default function App() {
   }, [t.networkError]);
 
   // Hooks
-  const catalog = useCatalog({ lang, t, persistCatalogFilters });
+  const catalog = useCatalog({
+    lang, t, persistCatalogFilters,
+    enabled: Boolean(currentUserId) && activeTab === 'catalog',
+  });
 
   const {
     getLibraryEntry, addToLibrary, setTvStatus,
@@ -298,6 +295,7 @@ export default function App() {
   } = useTmdbDetailsApi({
     library,
     setLibrary,
+    hydrateLibraryTitlesEnabled: activeTab === 'library',
     setSelectedItem,
     setSelectedPerson,
     setSeasonEpisodes,
@@ -590,9 +588,9 @@ export default function App() {
     setQuickActions({ item, x: clampedX, y: clampedY, showHideFromForYou });
   }, []);
 
-  const onCardClick = (item) => {
+  const onCardClick = useCallback((item) => {
     openDetailsWithHistory(item);
-  };
+  }, [openDetailsWithHistory]);
 
   const hideFromForYouRecommendations = useCallback(async (item) => {
     await hideRecommendation(item?.mediaType, item?.id);
@@ -830,6 +828,7 @@ export default function App() {
         </div>
       )}
 
+      <Suspense fallback={<p role="status" className="py-10 text-center opacity-60">{t.loading}</p>}>
       {/* CATALOG */}
       {activeTab === 'catalog' && (
         <div className="tab-enter" key="tab-catalog">
@@ -939,7 +938,14 @@ export default function App() {
         </div>
       )}
 
+      </Suspense>
+
       {/* DETAILS MODAL */}
+      {selectedItem && <Suspense fallback={
+        <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center" onClick={closeDetails}>
+          <p role="status" className="text-white">{t.loading}</p>
+        </div>
+      }>
       <DetailsModal
         selectedItem={selectedItem}
         isClosing={closingDetails} onClose={closeDetails}
@@ -954,6 +960,7 @@ export default function App() {
         getPersonDetails={getPersonDetails} getFullDetails={openDetailsWithHistory}
         triggerAddPulse={triggerAddPulse}
       />
+      </Suspense>}
 
       {/* QUICK ACTIONS */}
       <QuickActionsMenu
@@ -1159,6 +1166,11 @@ export default function App() {
       )}
 
       {/* PERSON MODAL */}
+      {selectedPerson && <Suspense fallback={
+        <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center" onClick={closePerson}>
+          <p role="status" className="text-white">{t.loading}</p>
+        </div>
+      }>
       <PersonModal
         selectedPerson={selectedPerson} setSelectedPerson={setSelectedPerson}
         isClosing={closingPerson} onClose={closePerson}
@@ -1166,6 +1178,7 @@ export default function App() {
         STATUS_BADGE_CONFIG={STATUS_BADGE_CONFIG}
         getFullDetails={openDetailsWithHistory}
       />
+      </Suspense>}
 
       {/* TRAILER */}
       {trailerId && (

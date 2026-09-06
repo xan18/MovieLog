@@ -78,6 +78,110 @@ const renderTvProgressBadgeIcon = (variant) => {
   return null;
 };
 
+// Keep unchanged cards (and their episode calculations) out of paging/filter updates.
+const LibraryCard = React.memo(function LibraryCard({
+  item, index, lang, t, onCardClick, openQuickActions,
+  onContextMenu, onTouchStart, onTouchMove, onTouchEnd, onTouchCancel,
+}) {
+  const displayTitle = pickDisplayTitle(item, lang);
+  const epProgress = (() => {
+    if (item.mediaType !== 'tv') return null;
+    const progress = getTvProgressSnapshot(item.watchedEpisodes || {}, item);
+    const displayTarget = progress.targetEpisodes > 0
+      ? progress.targetEpisodes
+      : progress.totalEpisodes;
+    if (displayTarget <= 0) return null;
+    const watchedForDisplay = Math.min(progress.watchedCount, displayTarget);
+    const remaining = Math.max(0, displayTarget - watchedForDisplay);
+    const pct = Math.round((watchedForDisplay / displayTarget) * 100);
+    const allTrackedWatched = remaining <= 0;
+    const waitingForNewEpisodes = progress.isWaitingForNewEpisodes;
+    const badge = allTrackedWatched
+      ? waitingForNewEpisodes
+        ? { variant: 'airing', color: 'bg-sky-600', title: t.waitingForNewEpisodes || t.waiting || 'Waiting for new episodes' }
+        : { variant: 'completed', color: 'bg-green-600', title: t.ended || 'Ended (completed)' }
+      : { text: `\u25B6 ${remaining}`, color: 'bg-white/80 text-black', title: `${remaining}` };
+    return { badge, pct, done: allTrackedWatched && !waitingForNewEpisodes, waitingForNewEpisodes };
+  })();
+  return (
+    <div
+      className="media-card group card-stagger"
+      style={{ '--stagger-i': index }}
+      onContextMenu={(event) => onContextMenu(event, item)}
+      onTouchStart={(event) => onTouchStart(event, item)}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchCancel}
+    >
+      <div onClick={() => onCardClick(item)} className="media-poster cursor-pointer">
+        <LazyImg
+          src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'}
+          srcSet={item.poster_path ? [185, 342, 500].map((width) => (
+            `https://image.tmdb.org/t/p/w${width}${item.poster_path} ${width}w`
+          )).join(', ') : undefined}
+          sizes="(min-width: 1180px) 212px, (min-width: 1024px) calc(20vw - 24px), (min-width: 768px) calc(25vw - 26px), calc(50vw - 26px)"
+          width={500}
+          height={750}
+          loading={index < 4 ? 'eager' : 'lazy'}
+          className="w-full aspect-[2/3] object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+          alt={displayTitle}
+        />
+        {item.rating > 0 && <div className="media-pill absolute top-2 right-2 bg-yellow-500 text-black">{'\u2605'} {item.rating}</div>}
+        {epProgress?.badge && (
+          <div
+            className={`media-pill absolute top-2 left-2 ${epProgress.badge.color} shadow-lg`}
+            title={epProgress.badge.title}
+          >
+            {epProgress.badge.variant
+              ? renderTvProgressBadgeIcon(epProgress.badge.variant)
+              : epProgress.badge.text}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            openQuickActions(item, e.clientX, e.clientY);
+          }}
+          className="quick-action-trigger"
+          aria-label={t.quickActions}
+          title={t.quickActions}
+        >
+          <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
+        <div className="card-info-overlay">
+          {item.vote_average > 0 && <p className="text-xs font-bold mb-0.5">{'\u2605'} {item.vote_average.toFixed(1)}</p>}
+          <p className="text-[10px] font-normal opacity-70">{getYear(item)}</p>
+        </div>
+      </div>
+      {epProgress && (
+        <div className="tv-progress-bar">
+          <div
+            className="tv-progress-fill"
+            style={{
+              width: `${epProgress.pct}%`,
+              background: epProgress.done
+                ? 'rgb(34, 197, 94)'
+                : epProgress.waitingForNewEpisodes
+                  ? 'rgb(14, 165, 233)'
+                  : 'rgb(59, 130, 246)',
+            }}
+          />
+        </div>
+      )}
+      <h3 className="media-title line-clamp-2">{displayTitle}</h3>
+      <p className="media-meta font-normal">{getYear(item)}</p>
+      {epProgress?.waitingForNewEpisodes && (
+        <p className="text-[10px] font-black uppercase tracking-widest text-sky-300 mt-1">
+          {t.waitingForNewEpisodes || t.waiting || 'Waiting'}
+        </p>
+      )}
+    </div>
+  );
+});
+
 const TMDB_LIBRARY_REFRESH_CHUNK_SIZE = 4;
 
 export default function LibraryView({
@@ -116,10 +220,10 @@ export default function LibraryView({
     consumeLongPress,
   } = useQuickActionGesture(openQuickActions);
 
-  const handleCardClick = (item) => {
+  const handleCardClick = React.useCallback((item) => {
     if (consumeLongPress()) return;
     onCardClick(item);
-  };
+  }, [consumeLongPress, onCardClick]);
 
   const mediaTypeStatuses = libraryType === 'movie' ? MOVIE_STATUSES : TV_STATUSES;
   const mediaTypeLibraryItems = React.useMemo(
@@ -572,95 +676,22 @@ export default function LibraryView({
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        {visibleLibraryItems.map((item, i) => {
-          const displayTitle = pickDisplayTitle(item, lang);
-          const epProgress = (() => {
-            if (item.mediaType !== 'tv') return null;
-            const progress = getTvProgressSnapshot(item.watchedEpisodes || {}, item);
-            const displayTarget = progress.targetEpisodes > 0
-              ? progress.targetEpisodes
-              : progress.totalEpisodes;
-            if (displayTarget <= 0) return null;
-            const watchedForDisplay = Math.min(progress.watchedCount, displayTarget);
-            const remaining = Math.max(0, displayTarget - watchedForDisplay);
-            const pct = Math.round((watchedForDisplay / displayTarget) * 100);
-            const allTrackedWatched = remaining <= 0;
-            const waitingForNewEpisodes = progress.isWaitingForNewEpisodes;
-            const badge = allTrackedWatched
-              ? waitingForNewEpisodes
-                ? { variant: 'airing', color: 'bg-sky-600', title: t.waitingForNewEpisodes || t.waiting || 'Waiting for new episodes' }
-                : { variant: 'completed', color: 'bg-green-600', title: t.ended || 'Ended (completed)' }
-              : { text: `\u25B6 ${remaining}`, color: 'bg-white/80 text-black', title: `${remaining}` };
-            return { badge, pct, done: allTrackedWatched && !waitingForNewEpisodes, waitingForNewEpisodes };
-          })();
-          return (
-            <div
-              key={`${item.mediaType}-${item.id}`}
-              className="media-card group card-stagger"
-              style={{ '--stagger-i': i }}
-              onContextMenu={(event) => onContextMenu(event, item)}
-              onTouchStart={(event) => onTouchStart(event, item)}
-              onTouchMove={onTouchMove}
-              onTouchEnd={onTouchEnd}
-              onTouchCancel={onTouchCancel}
-            >
-              <div onClick={() => handleCardClick(item)} className="media-poster cursor-pointer">
-                <LazyImg src={item.poster_path ? `${IMG_500}${item.poster_path}` : '/poster-placeholder.svg'} className="w-full aspect-[2/3] object-cover transition-transform duration-300 group-hover:scale-[1.04]" alt={displayTitle} />
-                {item.rating > 0 && <div className="media-pill absolute top-2 right-2 bg-yellow-500 text-black">{'\u2605'} {item.rating}</div>}
-                {epProgress?.badge && (
-                  <div
-                    className={`media-pill absolute top-2 left-2 ${epProgress.badge.color} shadow-lg`}
-                    title={epProgress.badge.title}
-                  >
-                    {epProgress.badge.variant
-                      ? renderTvProgressBadgeIcon(epProgress.badge.variant)
-                      : epProgress.badge.text}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openQuickActions(item, e.clientX, e.clientY);
-                  }}
-                  className="quick-action-trigger"
-                  aria-label={t.quickActions}
-                  title={t.quickActions}
-                >
-                  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden="true">
-                    <path d="M12 5v14M5 12h14" />
-                  </svg>
-                </button>
-                <div className="card-info-overlay">
-                  {item.vote_average > 0 && <p className="text-xs font-bold mb-0.5">{'\u2605'} {item.vote_average.toFixed(1)}</p>}
-                  <p className="text-[10px] font-normal opacity-70">{getYear(item)}</p>
-                </div>
-              </div>
-              {epProgress && (
-                <div className="tv-progress-bar">
-                  <div
-                    className="tv-progress-fill"
-                    style={{
-                      width: `${epProgress.pct}%`,
-                      background: epProgress.done
-                        ? 'rgb(34, 197, 94)'
-                        : epProgress.waitingForNewEpisodes
-                          ? 'rgb(14, 165, 233)'
-                          : 'rgb(59, 130, 246)',
-                    }}
-                  />
-                </div>
-              )}
-              <h3 className="media-title line-clamp-2">{displayTitle}</h3>
-              <p className="media-meta font-normal">{getYear(item)}</p>
-              {epProgress?.waitingForNewEpisodes && (
-                <p className="text-[10px] font-black uppercase tracking-widest text-sky-300 mt-1">
-                  {t.waitingForNewEpisodes || t.waiting || 'Waiting'}
-                </p>
-              )}
-            </div>
-          );
-        })}
+        {visibleLibraryItems.map((item, index) => (
+          <LibraryCard
+            key={`${item.mediaType}-${item.id}`}
+            item={item}
+            index={index}
+            lang={lang}
+            t={t}
+            onCardClick={handleCardClick}
+            openQuickActions={openQuickActions}
+            onContextMenu={onContextMenu}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+            onTouchCancel={onTouchCancel}
+          />
+        ))}
       </div>
 
       {filteredShown.length === 0 && (

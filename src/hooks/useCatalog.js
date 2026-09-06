@@ -56,7 +56,7 @@ function readStoredCatalogFilters() {
   }
 }
 
-export function useCatalog({ lang, t, persistCatalogFilters }) {
+export function useCatalog({ lang, t, persistCatalogFilters, enabled = true }) {
   const TMDB_LANG = lang === 'ru' ? 'ru-RU' : 'en-US';
 
   const initialStoredRef = useRef(null);
@@ -88,6 +88,7 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
   const [hasMore, setHasMore] = useState(true);
   const [catalogError, setCatalogError] = useState(null);
   const [isCatalogLoading, setIsCatalogLoading] = useState(true);
+  const loadedRequestRef = useRef(null);
 
   const CATALOG_SORT_OPTIONS = getCatalogSortOptions(t, mediaType);
   const RELEASE_FILTER_OPTIONS = getReleaseFilterOptions(t);
@@ -140,8 +141,10 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
 
   // Fetch genres with cache
   useEffect(() => {
-    if (genreCache.current[mediaType]) {
-      setGenres(genreCache.current[mediaType]);
+    if (!enabled) return;
+    const cacheKey = `${mediaType}:${TMDB_LANG}`;
+    if (genreCache.current[cacheKey]) {
+      setGenres(genreCache.current[cacheKey]);
       return;
     }
     const controller = new AbortController();
@@ -152,21 +155,29 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
           { language: TMDB_LANG },
           { signal: controller.signal }
         );
+        if (controller.signal.aborted) return;
         const list = Array.isArray(data?.genres) ? data.genres : [];
-        genreCache.current[mediaType] = list;
+        genreCache.current[cacheKey] = list;
         setGenres(list);
       } catch (error) {
         if (error?.name !== 'AbortError') {
           console.error(`Failed to load genres for ${mediaType}`, error);
         }
-        setGenres([]);
+        if (!controller.signal.aborted) setGenres([]);
       }
     })();
     return () => controller.abort();
-  }, [mediaType, TMDB_LANG]);
+  }, [enabled, mediaType, TMDB_LANG]);
 
   // Fetch catalog
   useEffect(() => {
+    if (!enabled) return;
+    const requestKey = JSON.stringify([
+      mediaType, debouncedQuery, selectedGenre, selectedYear,
+      selectedReleaseFilter, catalogSort, page, TMDB_LANG,
+    ]);
+    // Returning to the tab must retain loaded pages without appending the last page twice.
+    if (loadedRequestRef.current === requestKey) return;
     const controller = new AbortController();
     setCatalogError(null);
     setIsCatalogLoading(true);
@@ -193,6 +204,7 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
           data = await tmdbFetchJson(`/discover/${mediaType}`, params, { signal: controller.signal });
         }
 
+        if (controller.signal.aborted) return;
         const items = (data?.results || []).map((it) => ({ ...it, mediaType }));
         const filteredItems = items.filter((it) => {
           if (selectedReleaseFilter === 'all') return true;
@@ -205,6 +217,7 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
         setTotalPages(nextTotalPages);
         setHasMore(page < nextTotalPages);
         setCatalogItems((prev) => (page === 1 ? filteredItems : [...prev, ...filteredItems]));
+        loadedRequestRef.current = requestKey;
       } catch (error) {
         if (error?.name !== 'AbortError') {
           console.error(`Failed to load ${mediaType} catalog page ${page}`, error);
@@ -218,7 +231,7 @@ export function useCatalog({ lang, t, persistCatalogFilters }) {
     return () => {
       controller.abort();
     };
-  }, [mediaType, debouncedQuery, selectedGenre, selectedYear, selectedReleaseFilter, catalogSort, page, TMDB_LANG, t.networkError]);
+  }, [enabled, mediaType, debouncedQuery, selectedGenre, selectedYear, selectedReleaseFilter, catalogSort, page, TMDB_LANG, t.networkError]);
 
   return {
     mediaType, setMediaType,

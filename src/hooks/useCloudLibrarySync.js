@@ -5,7 +5,7 @@ const SYNC_DEBOUNCE_MS = 550;
 const UPSERT_BATCH_SIZE = 80;
 const DELETE_BATCH_SIZE = 120;
 const LOAD_BATCH_SIZE = 1000;
-const LOAD_REQUEST_CONCURRENCY = 4;
+const LOAD_REQUEST_CONCURRENCY = 2;
 const MIN_ADAPTIVE_BATCH_SIZE = 20;
 const STATEMENT_TIMEOUT_RETRY_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 250;
@@ -43,6 +43,17 @@ const writeCloudLibraryCache = (userId, library) => {
   } catch {
     // ignore
   }
+};
+
+// Serializing a large library is synchronous. Let the restored library paint first.
+const scheduleCloudLibraryCacheWrite = (userId, library) => {
+  const persist = () => writeCloudLibraryCache(userId, sanitizeLibraryData(library));
+  if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+    const id = window.requestIdleCallback(persist, { timeout: 3000 });
+    return () => window.cancelIdleCallback(id);
+  }
+  const id = setTimeout(persist, 100);
+  return () => clearTimeout(id);
 };
 
 const getLibraryItemFingerprint = (item, fingerprintCache) => {
@@ -121,7 +132,10 @@ const withStatementTimeoutRetry = async (operation, attempts = STATEMENT_TIMEOUT
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      return await operation();
+      const result = await operation();
+      // Supabase resolves HTTP errors; it does not reject unless throwOnError is used.
+      if (result?.error) throw result.error;
+      return result;
     } catch (error) {
       lastError = error;
       if (!isStatementTimeoutError(error) || attempt >= attempts) throw error;
@@ -159,34 +173,56 @@ const runAdaptiveBatch = async ({
   }
 };
 
-const loadCloudLibraryRows = async ({ supabaseClient, currentUserId }) => {
+export const loadCloudLibraryRows = async ({ supabaseClient, currentUserId }) => {
+  let useRpc = true;
+  const loadPage = (from, to, includeCount = false) => withStatementTimeoutRetry(() => {
+    const countOptions = includeCount ? { count: 'exact' } : {};
+    const query = useRpc
+      ? supabaseClient.rpc(CLOUD_LIBRARY_RPC_NAME, {}, countOptions)
+      : supabaseClient
+        .from('library_items')
+        .select('payload', countOptions)
+        .eq('user_id', currentUserId)
+        .order('id', { ascending: true });
+    return query.range(from, to);
+  });
+
+  let firstPage;
   try {
-    const { data, error } = await withStatementTimeoutRetry(() => (
-      supabaseClient.rpc(CLOUD_LIBRARY_RPC_NAME)
-    ));
-    if (error) throw error;
-    if (Array.isArray(data)) return data;
+    firstPage = await loadPage(0, LOAD_BATCH_SIZE - 1, true);
   } catch (rpcError) {
     if (!isMissingFunctionError(rpcError)) throw rpcError;
+    useRpc = false;
+    firstPage = await loadPage(0, LOAD_BATCH_SIZE - 1, true);
   }
 
-  const { count, error: countError } = await withStatementTimeoutRetry(() => (
-    supabaseClient
-      .from('library_items')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', currentUserId)
-  ));
-
-  if (countError) throw countError;
-
-  const totalRows = Math.max(0, Number(count) || 0);
+  const firstRows = Array.isArray(firstPage.data) ? firstPage.data : [];
+  const hasExactCount = firstPage.count != null && Number.isFinite(Number(firstPage.count));
+  const totalRows = hasExactCount ? Math.max(0, Number(firstPage.count)) : null;
   if (totalRows === 0) return [];
+  if (firstRows.length === 0) {
+    if (totalRows > 0) throw new Error('Cloud library returned an incomplete page.');
+    return [];
+  }
+  // PostgREST can cap rows below the requested range, including RPC responses.
+  // Advance by the page size actually returned so no records are skipped.
+  const pageSize = firstRows.length;
+  if (totalRows == null) {
+    const rows = [...firstRows];
+    while (true) {
+      const page = await loadPage(rows.length, rows.length + pageSize - 1);
+      const batch = Array.isArray(page.data) ? page.data : [];
+      rows.push(...batch);
+      if (batch.length < pageSize) return rows;
+    }
+  }
+  if (firstRows.length >= totalRows) return firstRows;
 
   const ranges = [];
-  for (let from = 0; from < totalRows; from += LOAD_BATCH_SIZE) {
+  for (let from = firstRows.length; from < totalRows; from += pageSize) {
     ranges.push({
       from,
-      to: Math.min(totalRows - 1, from + LOAD_BATCH_SIZE - 1),
+      to: Math.min(totalRows - 1, from + pageSize - 1),
     });
   }
 
@@ -194,20 +230,14 @@ const loadCloudLibraryRows = async ({ supabaseClient, currentUserId }) => {
     ranges,
     LOAD_REQUEST_CONCURRENCY,
     async ({ from, to }) => {
-      const { data, error } = await withStatementTimeoutRetry(() => (
-        supabaseClient
-          .from('library_items')
-          .select('payload')
-          .eq('user_id', currentUserId)
-          .order('id', { ascending: true })
-          .range(from, to)
-      ));
-      if (error) throw error;
-      return Array.isArray(data) ? data : [];
+      const { data } = await loadPage(from, to);
+      const rows = Array.isArray(data) ? data : [];
+      if (rows.length !== to - from + 1) throw new Error('Cloud library returned an incomplete page.');
+      return rows;
     }
   );
 
-  return batches.flat();
+  return firstRows.concat(...batches);
 };
 
 export function useCloudLibrarySync({
@@ -225,6 +255,14 @@ export function useCloudLibrarySync({
   const syncedSnapshotRef = useRef(new Map());
   const syncRevisionRef = useRef(0);
   const itemFingerprintCacheRef = useRef(new WeakMap());
+  const cancelCacheWriteRef = useRef(null);
+
+  const queueCacheWrite = useCallback((userId, nextLibrary) => {
+    cancelCacheWriteRef.current?.();
+    cancelCacheWriteRef.current = scheduleCloudLibraryCacheWrite(userId, nextLibrary);
+  }, []);
+
+  useEffect(() => () => cancelCacheWriteRef.current?.(), []);
 
   const applyLibraryState = useCallback((nextLibrary) => {
     startTransition(() => {
@@ -269,11 +307,11 @@ export function useCloudLibrarySync({
 
         const remoteLibrary = sanitizeLibraryData(rows.map((row) => row.payload));
         syncedSnapshotRef.current = buildLibrarySnapshot(remoteLibrary, itemFingerprintCacheRef.current);
-        writeCloudLibraryCache(currentUserId, remoteLibrary);
         skipNextSyncRef.current = true;
         applyLibraryState(remoteLibrary);
 
         setCloudReady(true);
+        queueCacheWrite(currentUserId, remoteLibrary);
       } catch (error) {
         if (cancelled || revision !== syncRevisionRef.current) return;
         setCloudSyncError(error?.message || syncErrorFallback);
@@ -287,7 +325,7 @@ export function useCloudLibrarySync({
     return () => {
       cancelled = true;
     };
-  }, [applyLibraryState, currentUserId, enabled, supabaseClient, syncErrorFallback]);
+  }, [applyLibraryState, currentUserId, enabled, queueCacheWrite, supabaseClient, syncErrorFallback]);
 
   useEffect(() => {
     if (!enabled || !supabaseClient || !currentUserId || !cloudReady) return;
@@ -367,11 +405,10 @@ export function useCloudLibrarySync({
 
         if (syncRevisionRef.current === revision) {
           syncedSnapshotRef.current = nextSnapshot;
-          writeCloudLibraryCache(
+          queueCacheWrite(
             currentUserId,
             Array.from(nextSnapshot.values())
-              .map((entry) => sanitizeLibraryEntry(entry.item))
-              .filter(Boolean)
+              .map((entry) => entry.item)
           );
         }
       } catch (error) {
@@ -382,7 +419,7 @@ export function useCloudLibrarySync({
     }, SYNC_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [cloudReady, currentUserId, enabled, library, supabaseClient, syncErrorFallback]);
+  }, [cloudReady, currentUserId, enabled, library, queueCacheWrite, supabaseClient, syncErrorFallback]);
 
   const resetCloudState = () => {
     setCloudSyncError('');

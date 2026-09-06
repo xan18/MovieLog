@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { startTransition, useCallback, useEffect, useRef } from 'react';
 import { tmdbFetchJson, tmdbFetchManyJson } from '../services/tmdb.js';
+import { getLibraryTitleFields, hydrateLibraryTitles, pauseTitleHydration } from '../utils/libraryTitleHydration.js';
 import {
   getEpisodeMarker,
   getTvSeasonsSignature,
@@ -186,6 +187,7 @@ const buildPersonFilmographyGroups = (allCredits, TMDB_LANG) => {
 export function useTmdbDetailsApi({
   library,
   setLibrary,
+  hydrateLibraryTitlesEnabled = true,
   setSelectedItem,
   setSelectedPerson,
   setSeasonEpisodes,
@@ -197,6 +199,9 @@ export function useTmdbDetailsApi({
 }) {
   const activeDetailsRequestRef = useRef(0);
   const activePersonRequestRef = useRef(0);
+  const titleHydrationRef = useRef(null);
+
+  useEffect(() => () => titleHydrationRef.current?.controller.abort(), []);
 
   const notifyError = useCallback((context, error) => {
     const message = error?.message || networkErrorMessage;
@@ -205,87 +210,56 @@ export function useTmdbDetailsApi({
   }, [networkErrorMessage, onError]);
 
   useEffect(() => {
-    if (!Array.isArray(library) || library.length === 0) return;
+    if (!hydrateLibraryTitlesEnabled) {
+      titleHydrationRef.current?.controller.abort();
+      return;
+    }
+    let state = titleHydrationRef.current;
+    if (!state || state.language !== TMDB_LANG || state.controller.signal.aborted) {
+      state?.controller.abort();
+      state = {
+        language: TMDB_LANG,
+        controller: new AbortController(),
+        attempted: new Set(),
+        running: false,
+        items: [],
+      };
+      titleHydrationRef.current = state;
+    }
+    state.items = Array.isArray(library) ? library : [];
+    if (state.items.length === 0) {
+      state.controller.abort();
+      return;
+    }
+    if (state.running) return;
+    state.running = true;
+    const { signal } = state.controller;
 
-    const localeKey = TMDB_LANG === 'ru-RU' ? 'ru' : 'en';
-    const getLocalizedField = (item) => (
-      item.mediaType === 'tv'
-        ? (localeKey === 'ru' ? 'name_ru' : 'name_en')
-        : (localeKey === 'ru' ? 'title_ru' : 'title_en')
-    );
-    const getBaseField = (item) => (item.mediaType === 'tv' ? 'name' : 'title');
-
-    const itemsToFetch = library.filter((item) => {
-      const localizedField = getLocalizedField(item);
-      return !String(item?.[localizedField] || '').trim();
-    });
-
-    if (itemsToFetch.length === 0) return;
-
-    let cancelled = false;
-
-    const hydrateLocalizedLibraryTitles = async () => {
-      const updates = new Map();
-      const chunkSize = 6;
-
-      for (let index = 0; index < itemsToFetch.length; index += chunkSize) {
-        if (cancelled) return;
-        const chunk = itemsToFetch.slice(index, index + chunkSize);
-        const results = await Promise.all(
-          chunk.map(async (item) => {
-            try {
-              const detail = await tmdbFetchJson(`/${item.mediaType}/${item.id}`, { language: TMDB_LANG });
-              const localizedTitle = item.mediaType === 'tv'
-                ? (detail.name || detail.original_name || '')
-                : (detail.title || detail.original_title || '');
-              if (!localizedTitle) return null;
-              return { key: `${item.mediaType}-${item.id}`, localizedTitle };
-            } catch (error) {
-              console.warn(`Failed to hydrate localized title for ${item.mediaType}:${item.id}`, error);
-              return null;
-            }
-          })
-        );
-
-        results.forEach((result) => {
-          if (!result) return;
-          updates.set(result.key, result.localizedTitle);
-        });
-      }
-
-      if (cancelled || updates.size === 0) return;
-
-      setLibrary((prev) => {
+    hydrateLibraryTitles({
+      getItems: () => state.items,
+      language: TMDB_LANG,
+      signal,
+      attempted: state.attempted,
+      fetchDetails: tmdbFetchJson,
+      pause: (milliseconds) => pauseTitleHydration(milliseconds, signal),
+      onBatch: (updates) => startTransition(() => setLibrary((prev) => {
+        if (signal.aborted) return prev;
         let changed = false;
         const next = prev.map((item) => {
-          const key = `${item.mediaType}-${item.id}`;
-          const localizedTitle = updates.get(key);
-          if (!localizedTitle) return item;
-
-          const localizedField = getLocalizedField(item);
-          const baseField = getBaseField(item);
-          const currentLocalizedValue = String(item?.[localizedField] || '').trim();
-          const currentBaseValue = String(item?.[baseField] || '').trim();
-
-          if (currentLocalizedValue === localizedTitle && currentBaseValue === localizedTitle) return item;
+          const title = updates.get(`${item.mediaType}:${item.id}`);
+          if (!title) return item;
+          const { localized, base } = getLibraryTitleFields(item, TMDB_LANG);
+          // Detail requests or user imports may already have supplied the title.
+          if (String(item[localized] || '').trim()) return item;
           changed = true;
-          return {
-            ...item,
-            [localizedField]: localizedTitle,
-            [baseField]: localizedTitle,
-          };
+          return { ...item, [localized]: title, [base]: title };
         });
-
         return changed ? next : prev;
-      });
-    };
-
-    hydrateLocalizedLibraryTitles();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [library, setLibrary, TMDB_LANG]);
+      })),
+    }).finally(() => {
+      state.running = false;
+    });
+  }, [hydrateLibraryTitlesEnabled, library, setLibrary, TMDB_LANG]);
 
   const getFullDetails = useCallback(async (item) => {
     if (!item?.id || !item?.mediaType) return;
