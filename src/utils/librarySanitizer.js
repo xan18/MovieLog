@@ -1,4 +1,4 @@
-import { isReleasedDate } from './releaseUtils.js';
+import { isFutureReleaseDate } from './releaseUtils.js';
 
 const MOVIE_STATUSES = new Set(['planned', 'completed']);
 const TV_STATUSES = new Set(['watching', 'planned', 'completed', 'dropped']);
@@ -152,9 +152,11 @@ export const sanitizeLibraryEntry = (entry) => {
   if (mediaType === 'movie') {
     let status = MOVIE_STATUSES.has(entry.status) ? entry.status : 'planned';
     let rating = clampRating(entry.rating);
-    const released = isReleasedDate(entry.release_date);
+    const isFutureRelease = isFutureReleaseDate(entry.release_date);
     const dateAdded = normalizeDateAdded(entry.dateAdded);
-    if (!released && status === 'completed') {
+    // Missing metadata is not evidence that a film is unreleased. Downgrade only
+    // when the stored date explicitly points to the future.
+    if (isFutureRelease && status === 'completed') {
       status = 'planned';
       rating = 0;
     }
@@ -175,9 +177,9 @@ export const sanitizeLibraryEntry = (entry) => {
   let rating = clampRating(entry.rating);
   let watchedEpisodes = normalizeEpisodeMap(entry.watchedEpisodes);
   let seasonRatings = normalizeSeasonRatings(entry.seasonRatings);
-  const released = isReleasedDate(entry.first_air_date);
+  const isFutureRelease = isFutureReleaseDate(entry.first_air_date);
   const dateAdded = normalizeDateAdded(entry.dateAdded);
-  if (!released && status === 'completed') {
+  if (isFutureRelease && status === 'completed') {
     status = 'planned';
     rating = 0;
     watchedEpisodes = {};

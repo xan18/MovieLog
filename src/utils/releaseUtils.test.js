@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isReleasedDate, isReleasedItem } from './releaseUtils.js';
+import { isFutureReleaseDate, isReleasedDate, isReleasedItem } from './releaseUtils.js';
 
 const toIsoDate = (date) => {
   const year = date.getFullYear();
@@ -33,5 +33,16 @@ describe('isReleasedItem', () => {
     expect(isReleasedItem(movie)).toBe(true);
     expect(isReleasedItem(show)).toBe(true);
     expect(isReleasedItem(unknown)).toBe(false);
+  });
+});
+
+describe('isFutureReleaseDate', () => {
+  it('distinguishes a known future date from missing or invalid metadata', () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    expect(isFutureReleaseDate(toIsoDate(tomorrow))).toBe(true);
+    expect(isFutureReleaseDate('')).toBe(false);
+    expect(isFutureReleaseDate('invalid-date')).toBe(false);
   });
 });

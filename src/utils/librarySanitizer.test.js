@@ -39,6 +39,19 @@ describe('sanitizeLibraryEntry', () => {
     expect(entry?.rating).toBe(0);
   });
 
+  it('preserves a completed movie when release metadata is missing', () => {
+    const entry = sanitizeLibraryEntry({
+      mediaType: 'movie',
+      id: 22,
+      status: 'completed',
+      rating: 9,
+      dateAdded: 123,
+    });
+
+    expect(entry?.status).toBe('completed');
+    expect(entry?.rating).toBe(9);
+  });
+
   it('normalizes watched episodes and season ratings for tv entries', () => {
     const entry = sanitizeLibraryEntry({
       mediaType: 'tv',

@@ -81,9 +81,19 @@ export function useLibrary({ library, setLibrary, setSelectedItem, selectedItemR
               return applyModificationTimestamp({ ...x, status }, changedAt);
             }
             if (status === 'planned') {
-              return applyModificationTimestamp({ ...x, status, rating: 0 }, changedAt);
+              return applyModificationTimestamp({
+                ...x,
+                release_date: item.release_date || x.release_date,
+                status,
+                rating: 0,
+              }, changedAt);
             }
-            return applyModificationTimestamp({ ...x, status, rating: ratingVal || x.rating }, changedAt);
+            return applyModificationTimestamp({
+              ...x,
+              release_date: item.release_date || x.release_date,
+              status,
+              rating: ratingVal || x.rating,
+            }, changedAt);
           }
           return x;
         })

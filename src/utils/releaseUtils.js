@@ -8,6 +8,13 @@ export const isReleasedDate = (dateStr) => {
   return date <= today;
 };
 
+export const isFutureReleaseDate = (dateStr) => {
+  if (!dateStr) return false;
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return false;
+  return !isReleasedDate(dateStr);
+};
+
 export const isReleasedItem = (item) => {
   if (!item) return false;
   const date = item.mediaType === 'movie' ? item.release_date : item.first_air_date;
